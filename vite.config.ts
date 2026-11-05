@@ -1,0 +1,35 @@
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
+
+// GitHub Pages のサブパスでも動くように相対パスで出力する
+export default defineConfig({
+  base: './',
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['apple-touch-icon.png'],
+      manifest: {
+        name: 'ひびつみ',
+        short_name: 'ひびつみ',
+        description: '日々を積んで、まちを育てる。目標達成×街づくりの自己管理アプリ',
+        lang: 'ja',
+        start_url: './',
+        scope: './',
+        display: 'standalone',
+        background_color: '#f6efe0',
+        theme_color: '#3b2a2e',
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+    }),
+  ],
+  test: {
+    include: ['src/**/*.test.ts'],
+  },
+});

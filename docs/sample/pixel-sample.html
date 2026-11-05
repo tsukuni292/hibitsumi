@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ドット絵 見本</title>
+<style>
+  :root { --bg:#f6efe0; --card:#fffaf0; --ink:#3b2a2e; --sub:#7a6a66; --line:#e3d6bf; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height:1.6; }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.4rem; margin:8px 0 4px; }
+  .lead { color:var(--sub); margin:0 0 16px; font-size:.9rem; }
+  section { background:var(--card); border:2px solid var(--line); border-radius:12px; padding:14px; margin-bottom:16px; }
+  h2 { font-size:1.05rem; margin:0 0 10px; }
+  .controls { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+  button { font:inherit; font-size:.9rem; padding:6px 14px; border-radius:8px; border:2px solid var(--ink);
+    background:#fff; color:var(--ink); cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--ink); color:#fff; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  #sceneWrap { width:100%; }
+  #scene { margin:0 auto; border-radius:6px; }
+  .gallery { display:flex; flex-wrap:wrap; gap:12px; }
+  .cell { display:flex; flex-direction:column; align-items:center; gap:4px; font-size:.72rem; color:var(--sub); }
+  .cell canvas { background:repeating-conic-gradient(#efe6d4 0 25%, #f8f2e6 0 50%) 0 0/16px 16px; border-radius:4px; }
+  .moods { display:flex; gap:24px; flex-wrap:wrap; }
+  .moods .cell { font-size:.9rem; color:var(--ink); }
+  #errors { display:none; background:#ffe9e6; border:2px solid #c95b4b; color:#8e3b3f; border-radius:8px;
+    padding:10px; margin-bottom:16px; font-size:.85rem; white-space:pre-wrap; }
+  .note { font-size:.8rem; color:var(--sub); margin:8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ドット絵 見本</h1>
+  <p class="lead">絵柄を決めるための見本です。村 → 町 → 都市 と発展すると、建物と地面の見た目が変わります。</p>
+  <div id="errors" role="alert"></div>
+
+  <section>
+    <h2>A. 街のようす</h2>
+    <div class="controls">
+      <button type="button" data-stage="village" aria-pressed="true">村</button>
+      <button type="button" data-stage="town" aria-pressed="false">町</button>
+      <button type="button" data-stage="city" aria-pressed="false">都市</button>
+      <button type="button" id="fadedBtn" aria-pressed="false">さびれ表示</button>
+    </div>
+    <div id="sceneWrap"><canvas id="scene"></canvas></div>
+    <p class="note">左から 住居・図書館（英語学習）・訓練場（トレーニング）。「さびれ表示」は図書館に、担当目標を3回連続で達成できなかったときの見た目をかけます。</p>
+  </section>
+
+  <section>
+    <h2>B. スプライト一覧</h2>
+    <div class="gallery" id="gallery"></div>
+  </section>
+
+  <section>
+    <h2>C. 住民のやる気</h2>
+    <div class="moods" id="moods"></div>
+  </section>
+</main>
+
+<script>
+const PALETTE = {
+  '.': null,
+  'k': '#3b2a2e',
+  'w': '#fffaf0',
+  'x': '#e8e1d5',
+  'a': '#c6bdb1',
+  'A': '#978d88',
+  'n': '#686072',
+  'g': '#8cc56a',
+  'h': '#b6dd7f',
+  'j': '#5c9a4e',
+  'e': '#f3dcae',
+  'd': '#d9ae79',
+  'D': '#b0845a',
+  'p': '#e3a96b',
+  'o': '#bf7d48',
+  'O': '#85543a',
+  'y': '#f2cf6b',
+  'Y': '#cc9b40',
+  's': '#f0957f',
+  'r': '#c95b4b',
+  'R': '#8e3b3f',
+  't': '#73a7c6',
+  'T': '#4b7399',
+  'c': '#aee2ee',
+  'C': '#6db3cd',
+  'q': '#74727d',
+  'Q': '#5c5a66',
+  'f': '#f8d2ab',
+  'F': '#df9f7f',
+  'b': '#7a4b33',
+  'u': '#ee7b78',
+  'v': '#6a86c9',
+  'l': '#ffe590',
+};
+
+const SPRITES = {
+  tile_grass_village: { w: 16, h: 16, rows: [
+    'gggggggggggggggg',
+    'ggggggggggggghgh',
+    'ghhgghggggggggjg',
+    'ggjgjggggggggggg',
+    'gggjgggggggggggg',
+    'gggggggggggggggg',
+    'gggggghgghggghgg',
+    'gggggggjggjgjggg',
+    'gjggggggjggjgggg',
+    'gghggggggggggggg',
+    'ggggggjggggggggg',
+    'ggghghgggggggggg',
+    'ggggjggggggghghg',
+    'ggggggggghgggjgg',
+    'gggggggggggggggg',
+    'gggggggggggggggg',
+  ] },
+  tile_flowers_village: { w: 16, h: 16, rows: [
+    'gggggggggggjgggg',
+    'gggghggggggggggg',
+    'gggwgggggggggggh',
+    'ggwlwggggggugggg',
+    'gggwgggggguluggg',
+    'gggjgggggggugggg',
+    'gggggggggggjgggg',
+    'gggggggggggggggg',
+    'gggggjggggjggggg',
+    'ggggggwgghggghgg',
+    'gggggwlwggjhjggg',
+    'ggggggwggggjgggg',
+    'ggggggjggggggggg',
+    'ghghgggggggggggg',
+    'ggjggggggggggggg',
+    'gggggggggggggggg',
+  ] },
+  tile_path_dirt: { w: 16, h: 16, rows: [
+    'ggDggggDgggDgggD',
+    'DDdDDDDdDDDdDDDd',
+    'dddddddddddddddd',
+    'dddddddddddddddd',
+    'dddddddddddddeed',
+    'dddeeddddddddDDd',
+    'dddDDddddDdddDdd',
+    'ddddddDdeddddddd',
+    'dddDdddddddddddd',
+    'dddddddddddeeddd',
+    'dedddddddddDDddd',
+    'dddddddDdddddddd',
+    'dDddddeedddddddd',
+    'ddddddDDdddddddd',
+    'gddddddgdddddddg',
+    'hggdggghgdgggggh',
+  ] },
+  tile_grass_town: { w: 16, h: 16, rows: [
+    'hggggggghggggggg',
+    'ggggghggggggghgg',
+    'gghggggggghggggg',
+    'ggggggghgggggjgh',
+    'gggghggggggghggg',
+    'ghgghghgghgggggg',
+    'gggggjhggggggghg',
+    'ggghggggggghgggg',
+    'hggggggghggggggg',
+    'ggggghggggggghgg',
+    'gghggggggghggggg',
+    'ggggggghggghghgh',
+    'ggjghgggggggjggg',
+    'ghggggggghgggggg',
+    'gggggghggggggghg',
+    'ggghggggggghgggg',
+  ] },
+  tile_cobble: { w: 16, h: 16, rows: [
+    'xxaAnxxaaAnxxaAn',
+    'xaaanxaaaanxaaan',
+    'nAAnnnAAAnnnAAnn',
+    'nnnnnnnnnnnnnnnn',
+    'aAnxxaAnxxaAnxxa',
+    'aanxaaanxaaanxaa',
+    'AnnnAAnnnAAnnnAA',
+    'nnnnnnnnnnnnnnnn',
+    'nxxaaAnxxaAnxxaA',
+    'nxaaaanxaaanxaaa',
+    'nnAAAnnnAAnnnAAn',
+    'nnnnnnnnnnnnnnnn',
+    'aaAnxxaAnxxaAnxx',
+    'aaanxaaanxaaanxa',
+    'AAnnnAAnnnAAnnnA',
+    'nnnnnnnnnnnnnnnn',
+  ] },
+  tile_sidewalk: { w: 16, h: 16, rows: [
+    'xxxxxxxAxxxxxxxA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaAaaAxaaaaaaA',
+    'xaaaaaaAxaaaxaaA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaaaaAxaaaaaaA',
+    'AAAAAAAAAAAAAAAA',
+    'xxxxxxxAxxxxxxxA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaaaaAxaaAaaaA',
+    'xaaaaaaAxaaaaaaA',
+    'xaaaaaaAxaaaaaaA',
+    'AAAAAAAAAAAAAAAA',
+  ] },
+  tile_asphalt: { w: 16, h: 16, rows: [
+    'xxxxxxxAxxxxxxxA',
+    'aaaaaaaAaaaaaaaA',
+    'QQQQQQQQQQQQQQQQ',
+    'qqqqqqqqqqqqqqqq',
+    'qqqqqqqqqqqqqqqq',
+    'qqAqqqqqQqqqqqqq',
+    'qqqAqqqqqqqqqqqq',
+    'qqqqqqqqqqqqQqqq',
+    'qqqqqqqqqqqQqqQq',
+    'qqQqqqqqqqqqqQqq',
+    'qqqqqqqqqqqqqqqq',
+    'Qqqqqqqqqqqqqqqq',
+    'qqqqqqqQqqqqqqqq',
+    'qqqqqqqqqqqQqqqq',
+    'QqqqqqqqQqqqqqqq',
+    'qqqqqQqqqqqqqqqq',
+  ] },
+  tile_asphalt_line: { w: 16, h: 16, rows: [
+    'QqqqQqqqqqqqqqqq',
+    'qqqqqqqqqqqqqqqq',
+    'qqqqqqqqqqQqqqqq',
+    'qqqqqqqAqQqqqqqq',
+    'qqqqqqqqqqqQqqqq',
+    'qqqqqqqqqqqqQqqq',
+    'qqqqqqqqqqqqqqqq',
+    'Aqqwwwwwwwwwqqqq',
+    'qqqwwwwwwwwwQqqq',
+    'QqqQQQQQQQQQqqqq',
+    'qqqqqqqqQqqqqqqq',
+    'qqqqqqqqqqqqqqqq',
+    'qqqqqqqqqqqqqqqq',
+    'qqQqqqqqqqqqqqqq',
+    'qqqqqqqqqqqqqqqq',
+    'qqqqqqqqqqqqqqqq',
+  ] },
+  tile_grass_city: { w: 16, h: 16, rows: [
+    'xxxxxxxxxxxxxxxA',
+    'xaaaaaaaaaaaaaaA',
+    'xajjjjjjjjjjjjaA',
+    'xajgggggggggggaA',
+    'xajgggggggghggaA',
+    'xajghghgggggggaA',
+    'xajggjggggggggaA',
+    'xajgggghggggggaA',
+    'xajgggggggggggaA',
+    'xajgggggghghggaA',
+    'xajgggggggjgggaA',
+    'xajgghggggggggaA',
+    'xajgggggggggggaA',
+    'xajgggggggggggaA',
+    'xaaaaaaaaaaaaaaA',
+    'AAAAAAAAAAAAAAAA',
+  ] },
+  deco_tree: { w: 16, h: 16, rows: [
+    '......kkkk......',
+    '....kkhgggkk....',
+    '...khhhhggggk...',
+    '..khwhhhhggggk..',
+    '..khhhhhhggggk..',
+    '.kgghhhhgjggggk.',
+    '.kggghhgggggggk.',
+    '.kgggggggggggjk.',
+    '..kggjggggjgjk..',
+    '..kggggggggjjk..',
+    '...kggggggjjk...',
+    '....kkgOOjkk....',
+    '......koOk......',
+    '......koOk......',
+    '......koOk......',
+    '.......kk.......',
+  ] },
+  deco_lamp: { w: 16, h: 16, rows: [
+    '.....kkkkkk.....',
+    '....kttttttk....',
+    '....kTTTTTTk....',
+    '.....kwlllk.....',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '......kAnk......',
+    '.....kAAAAk.....',
+    '.....knnnnk.....',
+    '......kkkk......',
+  ] },
+  house_village: { w: 32, h: 32, rows: [
+    '.....................kkkk.......',
+    '....................knnnnk......',
+    '........kkkkkkkkkkkkkaAAAk......',
+    '.......keeeeeeeeeeeeeeeeAk......',
+    '......keeyyyyyyyyyyyyyyYYk......',
+    '......keYYyYYyYYyYYyYYyYYk......',
+    '.....keeyyyyyyyyyyyyyyyyYYk.....',
+    '.....keeyyyyyyyyyyyyyyyyYYk.....',
+    '....kYYyYYyYYyYYyYYyYYyYYYYk....',
+    '....keeyyyyyyyyyyyyyyyyyyYYk....',
+    '...keeyyyyyyyyyyyyyyyyyyyyYYk...',
+    '...keYYyYYyYYyYYyYYyYYyYYyYYk...',
+    '..keeyyyyyyyyyyyyyyyyyyyyyyYYk..',
+    '..keeyyyyyyyyyyyyyyyyyyyyyyYYk..',
+    '.kyYyYyYyYyYyYyYyYyYyYyYyYyYyYk.',
+    '..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..',
+    '...kOddddddddddddddddddddddOk...',
+    '...kOeeeeeeeeeeeedeeeeeeeedOk...',
+    '...kOeeeedeeeeeeeeeeeeeeeedOk...',
+    '...kOekkkkkkeekkkkeekkkkkkdOk...',
+    '...kOekwlllkekkkkkkekwlllkdOk...',
+    '...kOekllllkekoOOOkekllllkdOk...',
+    '...kOekOOOOkekoOOOkekOOOOkdOk...',
+    '...kOeklllYkekoOOOkeklllYkdOk...',
+    '...kOekllYlkekoOOOkekllYlkdOk...',
+    '...kOekkkkkkekoOlOkekkkkkkdOk...',
+    '...kOeujsjujekoOOOkeujsjujdOk...',
+    '...kOeOOOOOOekoOOOkeOOOOOOdOk...',
+    '...kaanaaaanakoOOOkaanaaaanak...',
+    '...kAAAAnAAAAkoOkkkAAAAnAAAAnk..',
+    '....kkkkkkkkkxxaaaakkkkkkkkkk...',
+    '.............kkkkkk.............',
+  ] },
+  lib_village: { w: 32, h: 32, rows: [
+    '................................',
+    '...............kk...............',
+    '..............kpok..............',
+    '.............kppoOk.............',
+    '............kpopOoOk............',
+    '...........kpopkkOoOk...........',
+    '..........kpopkopkOoOk..........',
+    '.........kpopkpoppkOoOk.........',
+    '........kpopkppkkpokOoOk........',
+    '.......kpopkopklwkopkOoOk.......',
+    '......kpopkpopkllkoppkOoOk......',
+    '.....kpopkppoppkkpoppokOoOk.....',
+    '....kpopkoppoppoppoppopkOoOk....',
+    '...kpopkpoppoppoppoppoppkOoOk...',
+    '..kpopkppoppoppoppoppoppokOoOk..',
+    '.kOOOOOOOOOOOOOOOOOOOOOOOOOOOOk.',
+    '..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..',
+    '...koOOOOkkkkkkkkkkkkkkOOOOok...',
+    '...keooookeekkkkkkkkedkooooDk...',
+    '...kOOOOOkeekuulluuwkdkOOOOOk...',
+    '...koppppkekkkkkkkkkkdkppppok...',
+    '...keooookekvvvllvvwkdkooooDk...',
+    '...kOOOOOkekkkkkkkkkkdkOOOOOk...',
+    '...kokkkkkkkkkkkkkkkkkkppppok...',
+    '...kekuvljkookkkkkkookkkkkkDk...',
+    '...kOkuvljkOOkoOOOkOOkvvvwkOk...',
+    '...kokOOOOkppkoOOOkppkkkkkkok...',
+    '...kekjlvukookoOOlkookuuuuwDk...',
+    '...kOkkkkkkOOkoOOOkOOkkkkkkOk...',
+    '...kOOOOOOOOOOOOOOOOOOOOOOOOk...',
+    '....kkkkkkkkkkkkkkkkkkkkkkkk....',
+    '................................',
+  ] },
+  gym_village: { w: 32, h: 32, rows: [
+    '................................',
+    '................................',
+    '....................kkk.........',
+    '...................keeyk........',
+    '..................keeyyyk.......',
+    '......kkk........kssuuuuukk.....',
+    '....kkuuukk.....keeyyyyyyYuk....',
+    '...kuuuuuuuk....keykyyykYYkrk...',
+    '..kuuxwwwwuuk....kyyyyyYYk.k....',
+    '.kuuxwuuuwwuuk....kyYYYYk.......',
+    '.kuuwuuluuwuuk.....kyYYk........',
+    '.kuuwullluwurk....kOOOOOk.......',
+    '.kuuwuuluuwrrkkkkkyyyyyyykkkkkk.',
+    '.kuuwwuuuwwreeOddeyYyYyYYYddOeek',
+    '..kuuwwwwwrryyOppeyYyYyYYYppOyyk',
+    '.kdduuuurrrdyyOooeyYyuyYYYooOyyk',
+    'kdddOdurrdOdYYOddeyYuwuYYYddOYYk',
+    'kdddOddOddOddYdddeyYyuyYYYdddYdk',
+    'kdddOddOddOddddddeyYyYyYYYddDddk',
+    'kdddOddOddOdeddddeOOOOOOOYdddddk',
+    'kdddOddOddOddddddeyyyyyyYYdddddk',
+    'kdddOddddDOddddddkyyyyyyykdedddk',
+    'kdpOOddddpOdddddddddoOOpOddddpOk',
+    'kdoOdddddoOdddddddddoOOoOddddoOk',
+    'kpoOpppppoOdddDdddddoOOoOppppoOk',
+    'kooOooooooOdddddddddoOOoOoooooOk',
+    'kdoOdDdddoOdddddddddoOOoOdDddoOk',
+    'kdoOdddddoOdddddddDDDDDoOddddoOk',
+    '.koODDDDDoODDDDDDDDDDDDoODDDDoOk',
+    '..kDDDDDDDDDDDDDDDDDDDDDDDDDDkk.',
+    '...kkkkkkkkkkkkkkkkkkkkkkkkkk...',
+    '................................',
+  ] },
+  house_town: { w: 32, h: 40, rows: [
+    '......................kkkk......',
+    '.....................kRRRRk.....',
+    '.............kkkkkk..ksrrrk.....',
+    '........kkkkkrrrrrrkkksrrrk.....',
+    '.......kssssRRRRRRRRsssssRk.....',
+    '......kRsrrRRRRRRRRRRrrRRRk.....',
+    '......kRRRRRkeeeeeekRRRRRRk.....',
+    '.....kssrrrrkkkkkkkkrrrrRRk.....',
+    '.....kssRrrrkkwwcckkRrrrRRk.....',
+    '....kRRRRRRRkkwccckkRRRRRRRk....',
+    '...kssrrrrrrkkkkkkkkrrrrrrRRk...',
+    '...ksRrrrRrrkkCCCCkkrRrrrRRRk...',
+    '..kRRRRRRRRRkkkkkkkkRRRRRRRRRk..',
+    '..kssrrrrrrrrrrrrrrrrrrrrrrRRk..',
+    '.kRsrrRrrrRrrrRrrrRrrrRrrrRrRRk.',
+    '..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..',
+    '...kOddddddddddddddddddddddOk...',
+    '...kOeekkkkkkeeeeeekkkkkkedOk...',
+    '...kOeTkwwcckTeeeeTkwwcckTdOk...',
+    '...kOeTkwccckTeeeeTkwccckTdOk...',
+    '...kOeTkkkkkkTeeeeTkkkkkkTdOk...',
+    '...kOeTkcccckTeeeeTkcccckTdOk...',
+    '...kOeTkCCCCkTeeeeTkCCCCkTdOk...',
+    '...kOeekkkkkkeeeeeekkkkkkedOk...',
+    '...kOeeujuujueeeeeeujuujuedOk...',
+    '...kOOOOOOOOOOOOOOOOOOOOOOOOk...',
+    '...kOddddddddddddddddddddddOk...',
+    '...kOeeeeeeeeekkkkeeeeeeeedOk...',
+    '...kOekkkkkkekkkkkkekkkkkkdOk...',
+    '...kOekwwkckekctttkekwwcckdOk...',
+    '...kOekwckckekcTTTkekwkcckdOk...',
+    '...kOekcckckekctttkekckcckdOk...',
+    '...kOekCCkCkekcttlkekCkCCkdOk...',
+    '...kOekkkkkkekctttkekkkkkkdOk...',
+    '...kOeeeeeeeekctttkeeeeeeedOk...',
+    '...kaaaaaaaaakctttkaaaaaaaaak...',
+    '...kAAAAAAAAAAAAAAAAAAAAAAAAk...',
+    '....kkkkkkkkxxaaaaaakkkkkkkk....',
+    '............kkkkkkkk............',
+    '................................',
+  ] },
+  lib_town: { w: 32, h: 40, rows: [
+    '................................',
+    '...............kk...............',
+    '..............kxak..............',
+    '.............kxxxak.............',
+    '.......kkkk.kxxxxxak.kkkk.......',
+    '......kcccckxxxxxxxakcccck......',
+    '.....kccttkxxxxxxxxxakttTTk.....',
+    '.....kkTTkxxxxkkkkxxxakTkTk.....',
+    '....kccttkxxxkclcCkxxakttTTk....',
+    '...kccttkxxxxkcClckxxxakttTTk...',
+    '...kTTkkxxxxxxkkkkxxxxxakTTkTk..',
+    '..kcctkxxxxxxxxxxxxxxxxxaktTTk..',
+    '.kcctkxxxxxxxxxxxxxxxxxxxaktTTk.',
+    'kTTkkxxxxxxxxxxxxxxxxxxxxxakTTk.',
+    '.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.',
+    '.kxxxxxxxxxxxxxxxxxxxxxxxxxxxxk.',
+    '.kaaaaaaaaaaaaaaaaaaaaaaaaaaaak.',
+    '..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..',
+    '..kxasrrkeeeeeeeeeeeeedkRsrxak..',
+    '..kxarrrkeeekkkkkkkkeedkRrrxak..',
+    '..kxaRRRkeeekuulluuwkedkRRRxak..',
+    '..kxarRskeekkkkkkkkkkedkrrRxak..',
+    '..kxarRrkeekvvvllvvwkedkrrRxak..',
+    '..kxaRrkkkkkkkkkkkkkkrkkkRRxak..',
+    '..kxaskccckrRkkkkkkrRkccckrxak..',
+    '..kxarkwcckrkllllllkRkwcckrxak..',
+    '..kxaRkwcckRkoOkkoOkRkwcckRxak..',
+    '..kxarkccckskoOkkoOkrkccckRxak..',
+    '..kxarkkkkkrkoOkkoOkrkkkkkRxak..',
+    '..kxaRkccckRkoOkkoOkRkccckRxak..',
+    '..kxaskccckrkoOkkoOkRkccckrxak..',
+    '..kxarkCCCkrkolkkolkRkCCCkrxak..',
+    '..kxaRkkkkkRkoOkkoOkRkkkkkRxak..',
+    '..kxaxxxxxxxkoOkkoOkxxxxxxxxak..',
+    '..kxarRrrrRrkoOkkoOkrrRrrrRxak..',
+    '..kxaRRRRRRRkokkkokkRRRRRRRxak..',
+    '.kAAAAAAAAAAAAAAAAAAAAAAAAAAAAk.',
+    '..kkkkkkkxxxxxxxxxxxxxxkkkkkkk..',
+    '.......kxaaaaaaaaaaaaaaak.......',
+    '........kkkkkkkkkkkkkkkk........',
+  ] },
+  gym_town: { w: 32, h: 32, rows: [
+    '................................',
+    '.....kk..................kk.....',
+    '....knnkkkkkkkkkkkkkkkkkknnk....',
+    '.....knnnnnnnnnnnnnnnnnnnnk.....',
+    '......kttttttttttttttttttk......',
+    '.....kttTTTTTTTTTTTTTTTTTTk.....',
+    '.....ktnTTnTTnTTnTTnTTnTTnk.....',
+    '....ktnTTnTTnTTnTTnTTnTTnTTk....',
+    '...ktnTTnTTnTTnTTnTTnTTnTTnTk...',
+    '..ktnTTnTTnTTnTTnTTnTTnTTnTTnk..',
+    'k.ktnTTnTTnTTnTTnTTnTTnTTnTTnk.k',
+    'TktnTTnTTnTTnTTnTTnTTnTTnTTnTTkT',
+    'ntnTTnTTnTTnTTnTTnTTnTTnTTnTTnTn',
+    'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn',
+    'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk',
+    '..kOaaaaaaOaaaaaaaaaaOaaaaaaOk..',
+    '..kOOOOOOOOOOOOOOOOOOOOOOOOOOk..',
+    '..kOxxxxxxOTTTTTTTTTTOxxxxxxOk..',
+    '..kOxkkkkxOvvTvwwvTvvOxkkkkxOk..',
+    '..kOxkOwkxOvvTwvvwTvvOxkOwkxOk..',
+    '..kOxkOOkxOvvTvwwvTvvOxkOOkxOk..',
+    '..kOxkOekxOTTTTTTTTTTOxkOekxOk..',
+    '..kOxkkkkxOOeeOekOeeOOxkkkkxOk..',
+    '..kOxxxxxxOOOOOOkOOOOOxxxxxxOk..',
+    '..kOxxxxxxOOeeOekOeeOOxxxxxxOk..',
+    '..kOxxxxxxOOeeOekOeeOOxxxxxxOk..',
+    '.kxxxxnxxxxnnnnnnnnnnxxxxxxxxxk.',
+    '.kaaaanaaaaanaaaaaanaaaaanaaaak.',
+    '.kaaaaaaanaanaaaaaaaaanaanaaaak.',
+    '.kAAAAAAAnAAAAAAAAAAAAnAAAAAAAk.',
+    '..kkkkkkkkxxxxxxxxxxxxkkkkkkkk..',
+    '..........kkkkkkkkkkkk..........',
+  ] },
+  lib_city: { w: 32, h: 40, rows: [
+    '....................kkkkkk......',
+    '...................kxxxxxAk.....',
+    '..kkkkkkkkkkkkkkkkkkannnaAkkkk..',
+    '.kxxxxxxxxxxxxxxxxxxxxxxxxxxxxk.',
+    '.kaaaaaaaaaaaaaaaaaaaaaaaaaaaak.',
+    '.kxaaaaaaaaaaaaaaaaaaaaaaakAAAk.',
+    '.kxaccwwTccccTcwwcTccccTwakCTAk.',
+    '.kxacccwTccccTccwwTccccTcakTTAk.',
+    '.kxaccccTwcccTcccwTccccTcakCTAk.',
+    '.kxaccccTwwccTccccTwcccTcakTTAk.',
+    '.kxaCCCCTCwwCTCCCCTwwCCTCakCTAk.',
+    '.kxAAAAAAAAAAAAAAAAAAAAAAAkAAAk.',
+    '.kxaccccTwwccTccccTwcccTcakCTAk.',
+    '.kxaccccTcwwcTccccTwwccTcakTTAk.',
+    '.kxaccccTccwwTccccTcwwcTcakCTAk.',
+    '.kxacucvTlcjwTucvclcjwwTcakTTAk.',
+    '.kxawuCvTlCjCTuCvClCjCwTCakCTAk.',
+    '.kxAAAAAAAAAAAAAAAAAAAAAAAkAAAk.',
+    '.kxaccccTcccwTccccTccwwTcakCTAk.',
+    '.kxawcccTccccTwcccTcccwTcakTTAk.',
+    '.kxacwccTccccTwwccTccccTwakCTAk.',
+    '.kxaccwcTccccTcwwcTccccTwakTTAk.',
+    '.kxaCCCwTCCCCTCCwwTCCCCTCakCTAk.',
+    '.kxkkkkkkkkkkkkkkkkkkkkkkkkAAAk.',
+    '.kxtttkkkkkkkkttttttttttttkAAAk.',
+    '.kxvvvkuulluuwkvvvvvvvvvvvkAAAk.',
+    '.kxvvkkkkkkkkkkvvwwwwwwwvvkAAAk.',
+    '.kxvvkvvvllvvwkvvcccccvvvvkAAAk.',
+    '.kxvvkkkkkkkkkkvvvvvvvvvvvkAAAk.',
+    '.kxkkkkkkkkkkkkkkkkkkkkkkkkAAAk.',
+    '.kxnnnnnnnnnnnnnnnnnnnnnnnkAAAk.',
+    '.kxAAAAAAAkkkkkkkkkAAAAAAAkAAAk.',
+    '.kxAkkkkkAkwcckwcckAkkkkkAkAAAk.',
+    '.kxAkwcckAkccckccckAkwcckAkAAAk.',
+    '.kxAkCCCkAkcclklcckAkCCCkAkAAAk.',
+    '.kxAkkkkkAkCCCkCCCkAkkkkkAkAAAk.',
+    '.kxAAAAAAAkkkkkkkkkAAAAAAAkAAAk.',
+    'kxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxk',
+    'kaaaaaaaaaaaaaaaaaaaaaaaaaaaaaak',
+    '.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.',
+  ] },
+  gym_city: { w: 32, h: 40, rows: [
+    '................................',
+    '................................',
+    '..........kkkkkkkkkkkk..........',
+    '.......kkkxxxaxxxaxxAAkkk.......',
+    '.....kkxxaxxxaxxxaxxxaxAAkk.....',
+    '....kaxxxaxxxaxxxaxxxaxxxAAk....',
+    '...kxaxxxaxxxaxxxaxxxaxxxaAAk...',
+    '..kxxaxxxaxxxaxxxaxxxaxxxaxAAk..',
+    '.kxxxaxxxaxxxaxxxaxxxaxxxaxxAAk.',
+    '.kxxxaxxxaxxxaxxxaxxxaxxxaxxAAk.',
+    '.kxxxaxxxaxxxaxxxaxxxaxxxaxxAAk.',
+    '.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.',
+    '.kxssssssssssssssssssssssssssAk.',
+    '.kxuuuuuuuuwwuuuuuwwuuuuuuuuuAk.',
+    '.kxuuuuuuuwwwuuuuuwwwuuuuuuuuAk.',
+    '.kxuuuuuuuwwwwwwwwwwwuuuuuuuuAk.',
+    '.kxuuuuuuuwwwuuuuuwwwuuuuuuuuAk.',
+    '.kxuuuuuuuuwwuuuuuwwuuuuuuuuuAk.',
+    '.kxrrrrrrrrrrrrrrrrrrrrrrrrrrAk.',
+    '.kxkkkkkkkkkkkkkkkkkkkkkkkkkkAk.',
+    '.kxacccccTwccccTccccwTcccccTaAk.',
+    '.kxacccccTcwcccTcccccTwccccTaAk.',
+    '.kxacccccTccwccTcccccTwwcccTaAk.',
+    '.kxacccccTcccwcTcccccTcwwccTaAk.',
+    '.kxawccccTccccwTcccccTccwwcTaAk.',
+    '.kxacuuuuuuuuuuuuuuuuuuuuuuTaAk.',
+    '.kxaCCwCCTCCCCCTwCCCCTCCCCwTaAk.',
+    '.kxaCCCwCTCCCCCTCwCCCTCCCCCTaAk.',
+    '.kxAAAAAAAAAAAAAAAAAAAAAAAAAAAk.',
+    '.kxaaaaaAAAAAAAAAAAAAAAAaaaaaAk.',
+    '.kxaaaaannnnnnnnnnnnnnnnaaaaaAk.',
+    '.kxkkkkkkAAkkkkkkkkkkAAkkkkkkAk.',
+    '.kxkwckckaakwccckwcckaakwckckAk.',
+    '.kxkcckckaakcccckccckaakcckckAk.',
+    '.kxkCCkCkaakccclklcckaakCCkCkAk.',
+    '.kxkkkkkkaakcccckccckaakkkkkkAk.',
+    '.kxaaaaaaaakkkkkkkkkkaaaaaaaaAk.',
+    'kxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxk',
+    'kaaaaaaaaaaaaaaaaaaaaaaaaaaaaaak',
+    '.kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.',
+  ] },
+  house_city: { w: 32, h: 40, rows: [
+    '.....kkkkkk.....................',
+    '....kaaaaank.........kkkk.......',
+    '....kAAAAAnk........kxxxxk......',
+    '...kkAAAAAnkkkkkkkkkkaaaakkkk...',
+    '..kxxxxxxxxxxxxxxxxxxxxxxxxxxk..',
+    '..kAAAAAAAAAAAAAAAAAAAAAAAAAAk..',
+    '...kweeeeeeeeeeeeeeeeeeeeedDk...',
+    '...kwekkkkkkkeeeeekkkkkkkedDk...',
+    '...kwekwckcckeeeeekwckcckedDk...',
+    '...kwekcckcckeeeeekcckcckedDk...',
+    '...kwekjhjCCkeeeeekCCkCCkedDk...',
+    '...kwekkkkkkkeeeeekkkkkkkedDk...',
+    '...kwnnnnnnnnneeennnnnnnnndDk...',
+    '...kwnAnAnAnAneeenAnAnAnAndDk...',
+    '...kddddddddddddddddddddddddk...',
+    '...kwekkkkkkkeeeeekkkkkkkedDk...',
+    '...kwekwckcckeeeeekwckcckedDk...',
+    '...kwekcckcckeeeeekcckcckedDk...',
+    '...kwekCCkCCkeeeeekjujCCkedDk...',
+    '...kwekkkkkkkeeeeekkkkkkkedDk...',
+    '...kwnnnnnnnnneeennnnnnnnndDk...',
+    '...kwnAnAnAnAneeenAnAnAnAndDk...',
+    '...kddddddddddddddddddddddddk...',
+    '...kwekkkkkkkeeeeekkkkkkkedDk...',
+    '...kwekwckcckeeeeekwckcckedDk...',
+    '...kwekcckcckeeeeekcckcckedDk...',
+    '...kwekCCkCCkeeeeekCjhjCkedDk...',
+    '...kwekkkkkkkeeeeekkkkkkkedDk...',
+    '...kwnnnnnnnnneeennnnnnnnndDk...',
+    '...kwnAnAnttttttttttttAnAndDk...',
+    '...kddddddTTTTTTTTTTTTddddddk...',
+    '...kxxxxxxxxkkkkkkkkxxxxxxxxk...',
+    '...kakkkkaaakwckwcckaaakkkaak...',
+    '...kakkkkaaakcckccckaaaklkaak...',
+    '...kakuukaaakcckccckaaakkkaak...',
+    '...kakkkkaaakcckccckaaaaaaaak...',
+    '..kkaaaaaaaakkkkkkkkaaaaaaaakk..',
+    '.kxxxxxxxxxxxxxxxxxxxxxxxxxxxxk.',
+    '.kaaaaaaaaaaaaaaaaaaaaaaaaaaaak.',
+    '..kkkkkkkkkkkkkkkkkkkkkkkkkkkk..',
+  ] },
+  res_happy_0: { w: 12, h: 16, rows: [
+    '..........l.',
+    '....kkkk.lwl',
+    '..kkbbbbkkl.',
+    '.kbbbbbbbbk.',
+    '.kbffbbffbk.',
+    '.kffffffffk.',
+    '.kfkffffkfk.',
+    '.kfkffffkfk.',
+    '.ksfRRRRfsk.',
+    '..kffRRffk..',
+    '.k.kkkkkk.k.',
+    'kfkuuuuuukfk',
+    '.kkuuuuuukk.',
+    '..kvvvvvvk..',
+    '..kvvkkvvk..',
+    '..kkk..kkk..',
+  ] },
+  res_happy_1: { w: 12, h: 16, rows: [
+    '....kkkk.lwl',
+    '..kkbbbbkkl.',
+    '.kbbbbbbbbk.',
+    '.kbffbbffbk.',
+    '.kffffffffk.',
+    '.kfkffffkfk.',
+    '.kfkffffkfk.',
+    '.ksfRRRRfsk.',
+    '..kffRRffk..',
+    '.k.kkkkkk.k.',
+    'kfkuuuuuukfk',
+    '.kkuuuuuukk.',
+    '..kvvvvvvk..',
+    '..kvvkkvvk..',
+    '..kkkkkvvk..',
+    '.......kkk..',
+  ] },
+  res_neutral_0: { w: 12, h: 16, rows: [
+    '............',
+    '....kkkk....',
+    '..kkbbbbkk..',
+    '.kbbbbbbbbk.',
+    '.kbffbbffbk.',
+    '.kffffffffk.',
+    '.kfkffffkfk.',
+    '.kfkffffkfk.',
+    '.ksffffffsk.',
+    '..kffFFffk..',
+    '...kkkkkk...',
+    '..kuuuuuuk..',
+    '.kfuuuuuufk.',
+    '..kvvvvvvk..',
+    '..kvvkkvvk..',
+    '..kkk..kkk..',
+  ] },
+  res_neutral_1: { w: 12, h: 16, rows: [
+    '....kkkk....',
+    '..kkbbbbkk..',
+    '.kbbbbbbbbk.',
+    '.kbffbbffbk.',
+    '.kffffffffk.',
+    '.kfkffffkfk.',
+    '.kfkffffkfk.',
+    '.ksffffffsk.',
+    '..kffFFffk..',
+    '...kkkkkk...',
+    '..kuuuuuuk..',
+    '.kfuuuuuufk.',
+    '..kvvvvvvk..',
+    '..kvvkkvvk..',
+    '..kkkkkvvk..',
+    '.......kkk..',
+  ] },
+  res_sad_0: { w: 12, h: 16, rows: [
+    '............',
+    '............',
+    '....kkkk....',
+    '..kkbbbbkk..',
+    '.kbbbbbbbbk.',
+    '.kbbbbbbbbk.',
+    '.kbbfbbfbbkc',
+    '.kffffffffkC',
+    '.kfkkffkkfk.',
+    '.kfffFFfffk.',
+    '..kfFffFfk..',
+    '...kkkkkk...',
+    '..kuuuuuuk..',
+    '..kfuuuufk..',
+    '..kvvkkvvk..',
+    '..kkk..kkk..',
+  ] },
+  res_sad_1: { w: 12, h: 16, rows: [
+    '............',
+    '............',
+    '....kkkk....',
+    '..kkbbbbkk..',
+    '.kbbbbbbbbk.',
+    '.kbbbbbbbbk.',
+    '.kbbfbbfbbkc',
+    '.kffffffffkC',
+    '.kfkkffkkfk.',
+    '.kfffFFfffk.',
+    '..kfFffFfk..',
+    '...kkkkkk...',
+    '..kuuuuuuk..',
+    '..kfuuuufk..',
+    '..kvvk.kkk..',
+    '..kkk.......',
+  ] },
+};
+
+
+// ---------- 検証（行数・幅・未定義の色） ----------
+function validateSprites() {
+  const errs = [];
+  const bad = new Set();
+  for (const [name, s] of Object.entries(SPRITES)) {
+    if (!Array.isArray(s.rows)) { errs.push(`${name}: rows がありません`); bad.add(name); continue; }
+    if (s.rows.length !== s.h) { errs.push(`${name}: 行数 ${s.rows.length}（期待値 ${s.h}）`); bad.add(name); }
+    s.rows.forEach((r, i) => {
+      if (r.length !== s.w) { errs.push(`${name} 行${i}: 幅 ${r.length}（期待値 ${s.w}）`); bad.add(name); }
+      for (const c of r) {
+        if (!(c in PALETTE)) { errs.push(`${name} 行${i}: 未定義の色 '${c}'`); bad.add(name); break; }
+      }
+    });
+  }
+  return { errs, bad };
+}
+
+const { errs, bad: BAD } = validateSprites();
+if (errs.length) {
+  const box = document.getElementById('errors');
+  box.style.display = 'block';
+  box.textContent = 'スプライトのデータに誤りがあります:\n' + errs.join('\n');
+}
+
+// ---------- 描画キャッシュ ----------
+function hexToRgb(hex) {
+  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+}
+const RGB = {};
+for (const [k, v] of Object.entries(PALETTE)) RGB[k] = v ? hexToRgb(v) : null;
+
+function renderBase(s) {
+  const cv = document.createElement('canvas');
+  cv.width = s.w; cv.height = s.h;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(s.w, s.h);
+  for (let y = 0; y < s.h; y++) {
+    for (let x = 0; x < s.w; x++) {
+      const rgb = RGB[s.rows[y][x]];
+      if (!rgb) continue;
+      const o = (y * s.w + x) * 4;
+      img.data[o] = rgb[0]; img.data[o + 1] = rgb[1]; img.data[o + 2] = rgb[2]; img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+
+// 同じ名前なら毎回同じ模様になる乱数（さびれの模様が毎フレーム変わらないように）
+function seededRandom(str) {
+  let h = 2166136261;
+  for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return () => { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0; h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+}
+
+function applyFaded(base, name) {
+  const w = base.width, h = base.height;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(base, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const opaque = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
+  const set = (x, y, [r, g, b]) => { const o = (y * w + x) * 4; d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255; };
+
+  // 1. 色あせ：灰色に寄せて少し暗く、ほんのり茶色に
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const gray = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+    d[i]     = Math.round((d[i]     * 0.3 + gray * 0.7) * 0.85 + 8);
+    d[i + 1] = Math.round((d[i + 1] * 0.3 + gray * 0.7) * 0.85 + 4);
+    d[i + 2] = Math.round((d[i + 2] * 0.3 + gray * 0.7) * 0.85);
+  }
+  // 2. ほこり
+  const rnd = seededRandom(name);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (opaque(x, y) && rnd() < 0.06) set(x, y, [138, 127, 116]);
+  }
+  // 3. くもの巣（いちばん上の不透明な行の少し下、右上すみ）
+  let top = 0;
+  while (top < h && ![...Array(w).keys()].some(x => opaque(x, top))) top++;
+  const web = ['x...x', '.x.x.', '..x..', '.x.x.', 'x...x'];
+  const wx = w - 9, wy = Math.min(h - 6, top + 6);
+  web.forEach((row, j) => [...row].forEach((c, i) => {
+    if (c === 'x' && opaque(wx + i, wy + j)) set(wx + i, wy + j, [222, 216, 206]);
+  }));
+  // 4. つる（下から左右の壁をはい上がる）
+  for (const startX of [1, w - 3]) {
+    let x = startX;
+    const height = Math.floor(h / 3);
+    for (let k = 0; k < height; k++) {
+      const y = h - 2 - k;
+      if (rnd() < 0.35) x += rnd() < 0.5 ? -1 : 1;
+      x = Math.max(0, Math.min(w - 1, x));
+      if (opaque(x, y)) set(x, y, k % 3 === 0 ? [140, 197, 106] : [92, 154, 78]);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+
+const cache = new Map();
+function getSprite(name, faded = false) {
+  if (!SPRITES[name] || BAD.has(name)) return null;
+  const key = name + (faded ? ':faded' : '');
+  if (!cache.has(key)) {
+    const base = faded ? applyFaded(getSprite(name), name) : renderBase(SPRITES[name]);
+    cache.set(key, base);
+  }
+  return cache.get(key);
+}
+
+// ---------- 街のシーン ----------
+const T = 16, COLS = 10, ROWS = 7, SW = COLS * T, SH = ROWS * T;
+const ROAD_ROW = 5;
+const BUILD_X = { house: 1, lib: 4, gym: 7 }; // 2マス幅、道のすぐ上に立てる
+
+const STAGES = {
+  village: {
+    ground(x, y) {
+      if (y === ROAD_ROW) return 'tile_path_dirt';
+      return (x * 7 + y * 3) % 5 === 0 ? 'tile_flowers_village' : 'tile_grass_village';
+    },
+    buildings: { house: 'house_village', lib: 'lib_village', gym: 'gym_village' },
+    deco: [['deco_tree', 0, 4], ['deco_tree', 3, 4], ['deco_tree', 6, 4], ['deco_tree', 9, 4],
+           ['deco_tree', 1, 6], ['deco_tree', 8, 6], ['deco_tree', 0, 1], ['deco_tree', 9, 1]],
+  },
+  town: {
+    ground(x, y) { return y === ROAD_ROW ? 'tile_cobble' : 'tile_grass_town'; },
+    buildings: { house: 'house_town', lib: 'lib_town', gym: 'gym_town' },
+    deco: [['deco_tree', 0, 4], ['deco_lamp', 3, 4], ['deco_lamp', 6, 4], ['deco_tree', 9, 4],
+           ['deco_tree', 2, 6], ['deco_tree', 7, 6]],
+  },
+  city: {
+    ground(x, y) {
+      if (y === ROAD_ROW) return 'tile_asphalt_line';
+      if (y <= 1) return 'tile_grass_city';
+      if (y === 6 && (x === 2 || x === 7)) return 'tile_grass_city';
+      return 'tile_sidewalk';
+    },
+    buildings: { house: 'house_city', lib: 'lib_city', gym: 'gym_city' },
+    deco: [['deco_lamp', 0, 4], ['deco_lamp', 3, 4], ['deco_lamp', 6, 4], ['deco_lamp', 9, 4],
+           ['deco_tree', 2, 6], ['deco_tree', 7, 6]],
+  },
+};
+
+// 住民ごとに歩く範囲（x の左端・右端）を分けて、重なりにくくする
+const RESIDENTS = [
+  { mood: 'happy',   speed: 14, offset: 0,  y: ROAD_ROW * T, from: 0,  to: SW },
+  { mood: 'neutral', speed: 10, offset: 20, y: ROAD_ROW * T, from: 0,  to: 72 },
+  { mood: 'sad',     speed: 6,  offset: 10, y: ROAD_ROW * T, from: 96, to: SW },
+];
+
+let stage = 'village';
+let faded = false;
+const scene = document.getElementById('scene');
+const sceneWrap = document.getElementById('sceneWrap');
+let devScale = 1;
+
+// 実画面ピクセルで整数倍になるよう倍率を決める（スマホでもにじまない）
+function layoutScene() {
+  const dpr = window.devicePixelRatio || 1;
+  const avail = Math.max(1, sceneWrap.clientWidth);
+  const maxDev = Math.floor(4 * dpr);
+  devScale = Math.max(1, Math.min(maxDev, Math.floor(avail * dpr / SW)));
+  scene.width = SW * devScale;
+  scene.height = SH * devScale;
+  scene.style.width = (SW * devScale / dpr) + 'px';
+  scene.style.height = (SH * devScale / dpr) + 'px';
+}
+
+function draw(ctx, name, x, y, isFaded = false) {
+  const sp = getSprite(name, isFaded);
+  if (sp) ctx.drawImage(sp, Math.round(x), Math.round(y));
+}
+
+// 往復運動の位置（経過時間から計算するのでフレームレートに左右されない）
+function pingPong(t, speed, offset, range) {
+  const p = (t * speed + offset) % (range * 2);
+  return p < range ? p : range * 2 - p;
+}
+
+function drawScene(timeMs) {
+  const t = timeMs / 1000;
+  const ctx = scene.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, scene.width, scene.height);
+  ctx.setTransform(devScale, 0, 0, devScale, 0, 0);
+
+  const st = STAGES[stage];
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) draw(ctx, st.ground(x, y), x * T, y * T);
+
+  // 建物と飾りは「下端の高さ」順に描く（手前のものが上に重なる）
+  const items = [];
+  for (const [key, xTile] of Object.entries(BUILD_X)) {
+    const name = st.buildings[key];
+    const s = SPRITES[name];
+    if (!s) continue;
+    items.push({ name, x: xTile * T, y: ROAD_ROW * T - s.h, bottom: ROAD_ROW * T, faded: faded && key === 'lib' });
+  }
+  for (const [name, x, y] of st.deco) {
+    const s = SPRITES[name];
+    if (!s) continue;
+    items.push({ name, x: x * T + (T - s.w) / 2, y: (y + 1) * T - s.h, bottom: (y + 1) * T, faded: false });
+  }
+  items.sort((a, b) => a.bottom - b.bottom);
+  for (const it of items) draw(ctx, it.name, it.x, it.y, it.faded);
+
+  const frame = Math.floor(t / 0.25) % 2;
+  for (const r of RESIDENTS) {
+    const name = `res_${r.mood}_${frame}`;
+    const s = SPRITES[name];
+    if (!s) continue;
+    const x = r.from + pingPong(t, r.speed, r.offset, r.to - r.from - s.w);
+    draw(ctx, name, x, r.y);
+  }
+}
+
+function loop(ts) { drawScene(ts); requestAnimationFrame(loop); }
+
+document.querySelectorAll('[data-stage]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    stage = btn.dataset.stage;
+    document.querySelectorAll('[data-stage]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  });
+});
+document.getElementById('fadedBtn').addEventListener('click', e => {
+  faded = !faded;
+  e.currentTarget.setAttribute('aria-pressed', String(faded));
+});
+
+// ---------- 一覧 ----------
+function makeCell(name, cssScale, label, isFaded = false) {
+  const s = SPRITES[name];
+  const dpr = window.devicePixelRatio || 1;
+  const k = Math.max(1, Math.round(cssScale * dpr));
+  const cv = document.createElement('canvas');
+  cv.width = s.w * k; cv.height = s.h * k;
+  cv.style.width = (s.w * k / dpr) + 'px';
+  cv.style.height = (s.h * k / dpr) + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const sp = getSprite(name, isFaded);
+  if (sp) ctx.drawImage(sp, 0, 0, s.w * k, s.h * k);
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  const cap = document.createElement('span');
+  cap.textContent = label;
+  cell.append(cv, cap);
+  return cell;
+}
+
+const gallery = document.getElementById('gallery');
+for (const [name, s] of Object.entries(SPRITES)) gallery.append(makeCell(name, 4, `${name} (${s.w}×${s.h})`));
+for (const name of ['lib_village', 'lib_town', 'lib_city']) gallery.append(makeCell(name, 4, `${name} さびれ`, true));
+
+const moods = document.getElementById('moods');
+for (const [mood, label] of [['happy', '元気'], ['neutral', '普通'], ['sad', 'しょんぼり']]) {
+  moods.append(makeCell(`res_${mood}_0`, 6, label));
+}
+
+layoutScene();
+window.addEventListener('resize', layoutScene);
+if ('ResizeObserver' in window) new ResizeObserver(layoutScene).observe(sceneWrap);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
