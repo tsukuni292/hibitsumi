@@ -42,10 +42,14 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const frequency: Frequency = kind === 'daily' ? { kind } : kind === 'weekdays' ? { kind, days } : { kind, times };
+    const frequency: Frequency =
+      kind === 'daily' || kind === 'assignments' ? { kind } : kind === 'weekdays' ? { kind, days } : { kind, times };
     const text: GoalText = goalType === 'diary'
       ? { name, ideal: '', minimum: null, idealChars }
-      : { name, ideal, minimum: minimum.trim() ? minimum : null };
+      : kind === 'assignments'
+        // 課題型はチェックしないのでラインは使わない。頻度だけ変えたときに「ラインの変更」扱いにならないよう元の値を残す
+        ? { name, ideal: ideal.trim() || '期限内に提出', minimum: minimum.trim() ? minimum : null }
+        : { name, ideal, minimum: minimum.trim() ? minimum : null };
     onSubmit({ goalType, building, text, frequency });
   };
 
@@ -57,7 +61,7 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
     <form className="goal-form" onSubmit={submit}>
       <h2>{goal ? '目標を編集' : '目標を追加'}</h2>
       {!isNewToday && (
-        <p className="hint">名前・ラインの変更は<strong>明日から</strong>、頻度の変更は<strong>来週の月曜から</strong>反映されます（今日の判定を変えないため）。</p>
+        <p className="hint">変更は<strong>明日から</strong>反映されます（今日の判定を変えないため）。「週に何回」が関わる頻度の変更だけは、週の集計を崩さないよう<strong>来週の月曜から</strong>です。</p>
       )}
 
       {goal === null && (
@@ -103,6 +107,8 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
             required
           />
         </label>
+      ) : kind === 'assignments' ? (
+        <p className="hint">「課題があるときだけ」の目標は、チェックの代わりに課題リスト（内容・期限）で評価します。期限内に完了でコイン、期限を守れないとやる気が下がります。</p>
       ) : (
         <>
           <label className="field">
@@ -122,10 +128,10 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
       <fieldset className="field">
         <legend>頻度</legend>
         <div className="radio-row">
-          {(['daily', 'weekdays', 'weekly'] as const).map(k => (
+          {(['daily', 'weekdays', 'weekly', 'assignments'] as const).map(k => (
             <label key={k} className="radio">
               <input type="radio" name="freq" checked={kind === k} onChange={() => setKind(k)} />
-              {k === 'daily' ? '毎日' : k === 'weekdays' ? '曜日を指定' : '週に何回'}
+              {k === 'daily' ? '毎日' : k === 'weekdays' ? '曜日を指定' : k === 'weekly' ? '週に何回' : '課題があるときだけ'}
             </label>
           ))}
         </div>

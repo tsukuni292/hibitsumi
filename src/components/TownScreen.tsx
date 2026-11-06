@@ -9,6 +9,7 @@ import {
 import { inRangeFacilities, isCollapseImminent, isFadedNow, type SimResult } from '../core/simulate';
 import type { FacilityKind, FacilityPurchase, SaveData } from '../core/types';
 import { formatShort } from '../app/format';
+import { formatSource, quoteFor } from '../core/quotes';
 import { residentCount, residentLine } from '../render/residents';
 import { spriteSize } from '../render/spriteCache';
 import { HOUSES_BY_STAGE, layoutTown } from '../render/townLayout';
@@ -33,6 +34,8 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
   const [zoomIdx, setZoomIdx] = useState(1);
   const [selected, setSelected] = useState<string | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
+  // 住民をタップした回数（タップのたびに次の名言）
+  const [quoteCount, setQuoteCount] = useState<number | null>(null);
   const zoom = ZOOMS[zoomIdx] ?? 3;
 
   const activeGoals = useMemo(() => save.goals.filter(g => isActive(g, today)), [save.goals, today]);
@@ -57,6 +60,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
 
   const mood = moodForMorale(sim.morale);
   const line = residentLine(mood, toDayNumber(today));
+  const quote = quoteCount === null ? null : quoteFor(toDayNumber(today), quoteCount);
   const selGoal = selected?.startsWith('goal:') ? activeGoals.find(g => `goal:${g.id}` === selected) ?? null : null;
   const selFacility = selected?.startsWith('fac:') ? facilities.find(f => `fac:${f.id}` === selected) ?? null : null;
 
@@ -73,6 +77,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
             if (key) setShopOpen(false);
           }}
           zoom={zoom}
+          onResidentTap={() => setQuoteCount(c => (c === null ? 0 : c + 1))}
         />
         <div className="zoom-buttons">
           <button type="button" className="btn icon" aria-label="縮小" disabled={zoomIdx === 0} onClick={() => setZoomIdx(i => Math.max(0, i - 1))}>－</button>
@@ -80,7 +85,22 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         </div>
       </div>
 
-      <p className="speech">住民「{line}」</p>
+      {quote ? (
+        <div className="speech quote" aria-live="polite">
+          <p className="quote-text">「{quote.text}」</p>
+          <p className="quote-meaning">{quote.meaning}</p>
+          <p className="quote-source">— {formatSource(quote)}</p>
+          {quote.note && (
+            <details className="quote-note">
+              <summary>原文・補足</summary>
+              <p>{quote.note}</p>
+            </details>
+          )}
+          <p className="hint">ほかの住民をタップすると、別の言葉を教えてくれます。</p>
+        </div>
+      ) : (
+        <p className="speech">住民「{line}」<span className="hint">　住民をタップすると、名言を教えてくれます。</span></p>
+      )}
 
       <div className="btn-row">
         <button type="button" className={`btn${shopOpen ? ' primary' : ''}`} onClick={() => { setShopOpen(o => !o); setSelected(null); }}>

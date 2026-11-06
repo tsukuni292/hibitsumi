@@ -32,7 +32,8 @@ export const DEFAULT_GOALS: Preset[] = [
   { type: 'check', building: 'bank', text: { name: 'FP学習', ideal: 'テキスト1節＋問題', minimum: '問題を3問' }, frequency: { kind: 'daily' } },
   { type: 'check', building: 'news', text: { name: 'ニュースを読む', ideal: '記事を3本', minimum: '見出しを読む' }, frequency: { kind: 'daily' } },
   { type: 'check', building: 'gym', text: { name: 'トレーニング', ideal: '30分', minimum: 'ストレッチ5分' }, frequency: { kind: 'weekly', times: 3 } },
-  { type: 'check', building: 'school', text: { name: '大学の課題', ideal: '1コマ分進める', minimum: '15分だけ着手' }, frequency: { kind: 'weekdays', days: [0, 1, 2, 3, 4] } },
+  // 大学の課題は毎日の目標ではなく、提出物があるときだけ（課題リストで期限を管理）
+  { type: 'check', building: 'school', text: { name: '大学の課題', ideal: '期限内に提出', minimum: null }, frequency: { kind: 'assignments' } },
   { type: 'check', building: 'plaza', text: { name: '掃除', ideal: '1部屋', minimum: '机の上だけ' }, frequency: { kind: 'weekly', times: 2 } },
   DIARY_PRESET,
 ];
@@ -56,6 +57,7 @@ export function createInitialSave(today: GameDate, newId: () => string, dayStart
     checks: {},
     diary: {},
     todos: [],
+    assignments: [],
     facilities: [],
     restDays: [],
     upgrades: [],

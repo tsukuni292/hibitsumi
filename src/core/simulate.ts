@@ -1,9 +1,9 @@
 // 記録（SaveData）を最初の日から順に再生して、いまの街の状態を求める。
 // 同じ記録と同じ「今日」からは必ず同じ結果になる（純粋関数）。
-import { addDays, dateRange, isSunday, weekStart, type GameDate } from './date';
-import { frequencyOn, idealCharsOn, isActive, isCheckable, isScheduledDaily, isWeeklyOn } from './goals';
+import { addDays, dateRange, diffDays, isSunday, weekStart, type GameDate } from './date';
+import { frequencyOn, idealCharsOn, isActive, isAssignmentGoalOn, isCheckable, isScheduledDaily, isWeeklyOn } from './goals';
 import * as R from './rules';
-import type { CheckLevel, FacilityKind, FacilityPurchase, Goal, SaveData } from './types';
+import type { Assignment, CheckLevel, FacilityKind, FacilityPurchase, Goal, SaveData } from './types';
 
 export type DayKind =
   /** 通常の判定 */
@@ -32,9 +32,12 @@ export interface DayResult {
   /** 目標・日記・ToDo で得たコインの合計 */
   coinsEarned: number;
   todoCoins: number;
+  assignmentCoins: number;
   coinsSpent: number;
   moraleSpent: number;
   weekly: WeeklySettlement[];
+  /** この日が期限で、期限内に完了しなかった課題のID */
+  overdue: string[];
   newlyFaded: string[];
   recovered: string[];
   /** 倒壊してレベルが下がった建物 */
@@ -78,6 +81,8 @@ export interface SimResult {
   todayCoins: number;
   /** 今日のToDo完了のうち、コインがもらえる残り件数 */
   todoRewardsLeft: number;
+  /** 今日の課題の期限内完了のうち、コインがもらえる残り件数 */
+  assignmentRewardsLeft: number;
   buildings: Record<string, BuildingState>;
   facilities: Record<FacilityKind, number>;
   /** 今日の未達に対して神社のお守りが使えるか（神社がなければ false） */
@@ -95,6 +100,29 @@ export function checkOn(save: SaveData, rest: ReadonlySet<GameDate>, goal: Goal,
   if (!isCheckable(goal, date)) return null;
   if (goal.type === 'diary') return R.diaryLevel(save.diary[date], idealCharsOn(goal, date));
   return save.checks[date]?.[goal.id] ?? null;
+}
+
+/** 課題を doneOn に完了したときのコイン（上限は別に数える）。期限後は0 */
+export function assignmentReward(a: Assignment, doneOn: GameDate): number {
+  if (doneOn > a.due) return 0;
+  return R.ASSIGNMENT_ONTIME_COIN + (diffDays(a.due, doneOn) >= R.ASSIGNMENT_EARLY_DAYS ? R.ASSIGNMENT_EARLY_BONUS : 0);
+}
+
+/**
+ * 課題の完了を評価の対象にするか。
+ * - 登録した翌日以降の完了だけ（その場で登録してすぐ完了、の抜け道を防ぐ）
+ * - その日に担当の目標が「課題があるときだけ」であること（頻度を戻した目標・削除した目標は対象外）
+ */
+export function countsAsAssignmentWork(goal: Goal | undefined, a: Assignment, doneOn: GameDate): boolean {
+  return goal !== undefined && doneOn > a.createdOn && isAssignmentGoalOn(goal, doneOn);
+}
+
+/** その日に担当目標を「達成した」か（チェック・日記、または課題を期限内に完了） */
+export function achievedOn(save: SaveData, rest: ReadonlySet<GameDate>, goal: Goal, date: GameDate): boolean {
+  if (checkOn(save, rest, goal, date) !== null) return true;
+  return save.assignments.some(
+    a => a.goalId === goal.id && a.doneOn === date && a.doneOn <= a.due && countsAsAssignmentWork(goal, a, date),
+  );
 }
 
 function groupBy<T>(list: T[], key: (t: T) => GameDate): Map<GameDate, T[]> {
@@ -119,6 +147,10 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   const validPurchases = inRangeFacilities(save, today);
   const purchases = groupBy(validPurchases, f => f.date);
   const todosDone = groupBy(save.todos.filter(t => t.doneOn !== null), t => t.doneOn as GameDate);
+  // 担当の目標が消えた課題（壊れたデータ）は数えない
+  const assignments = save.assignments.filter(a => goalById.has(a.goalId));
+  const assignmentsDone = groupBy(assignments.filter(a => a.doneOn !== null), a => a.doneOn as GameDate);
+  const assignmentsDue = groupBy(assignments, a => a.due);
 
   const buildings: Record<string, BuildingState> = {};
   for (const g of goals) buildings[g.id] = { goalId: g.id, level: 1, misses: 0 };
@@ -150,6 +182,18 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   const todoCoinsOn = (date: GameDate) => {
     const n = Math.min((todosDone.get(date) ?? []).length, R.TODO_DAILY_CAP);
     return n * (R.TODO_COIN + (effective('stall', date) ? R.STALL_TODO_BONUS : 0));
+  };
+
+  /**
+   * その日に完了した課題：コイン（期限内のものを報酬の多い順に1日の上限まで）、期限内に完了した目標、件数。
+   * 評価の対象外の完了（登録した当日の完了など）はコインも活動もなし
+   */
+  const assignmentsOn = (date: GameDate) => {
+    const done = (assignmentsDone.get(date) ?? []).filter(a => countsAsAssignmentWork(goalById.get(a.goalId), a, date));
+    const onTime = done.filter(a => date <= a.due);
+    const rewards = onTime.map(a => assignmentReward(a, date)).sort((x, y) => y - x);
+    const coinsEarned = rewards.slice(0, R.ASSIGNMENT_DAILY_CAP).reduce((sum, c) => sum + c, 0);
+    return { coins: coinsEarned, onTimeGoals: new Set(onTime.map(a => a.goalId)), onTimeCount: onTime.length, any: done.length > 0 };
   };
 
   /** 連続未達を n 回増やす。7の倍数をまたいだら倒壊（お守りがあれば防ぐ） */
@@ -187,7 +231,7 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       const st = b(u.goalId);
       const cost = R.upgradeCost(st.level);
       if (cost === null) continue; // 最大レベル（記録が壊れていても落ちないように無視）
-      if (st.misses >= R.FADE_AFTER_MISSES && checkOn(save, rest, goal, date) === null) continue;
+      if (st.misses >= R.FADE_AFTER_MISSES && !achievedOn(save, rest, goal, date)) continue;
       st.level += 1;
       spentCoins += cost;
     }
@@ -232,6 +276,11 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     }
     const todoCoins = todoCoinsOn(date);
     earned += todoCoins;
+    const asg = assignmentsOn(date);
+    earned += asg.coins;
+    // 課題の完了も「その日の活動」。期限内に完了すれば、担当の建物の連続未達は0に戻る
+    if (asg.any) anyCheck = true;
+    for (const goalId of asg.onTimeGoals) b(goalId).misses = 0;
     coins += earned;
 
     // 2. 日次判定
@@ -284,13 +333,27 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       }
     }
 
-    if (!anyCheck && !isRest && (kind === 'normal' || weekly.length > 0)) absentPenalties += 1;
+    // 4. 課題の期限切れ：この日が期限で、期限内に完了しなかったもの。休養日でも罰あり（実際の締切は休めないため）
+    const overdue: string[] = [];
+    if (!capped) {
+      for (const a of assignmentsDue.get(date) ?? []) {
+        const goal = goalById.get(a.goalId);
+        if (!goal || !isActive(goal, date)) continue;
+        if (a.doneOn !== null && a.doneOn <= a.due) continue;
+        addMisses(a.goalId, 1, date, collapsed, prot);
+        overdue.push(a.id);
+      }
+    }
+
+    if (!anyCheck && (((kind === 'normal' || weekly.length > 0) && !isRest) || overdue.length > 0)) absentPenalties += 1;
 
     if (delta < 0 && effective('bathhouse', date)) delta *= R.BATHHOUSE_PENALTY_FACTOR;
     if (delta > 0 && before > R.MORALE_SOFT_CAP) delta /= 2;
-    morale = Math.min(R.MORALE_MAX, Math.max(R.MORALE_MIN, R.round2(before + delta)));
+    // 課題の期限切れは、達成度による増減とは別に「1件ごとに必ず −3」（半分にしたり上限で打ち消したりしない）
+    const afterDaily = Math.min(R.MORALE_MAX, Math.max(R.MORALE_MIN, R.round2(before + delta)));
+    morale = Math.max(R.MORALE_MIN, R.round2(afterDaily - overdue.length * R.ASSIGNMENT_OVERDUE_PENALTY));
 
-    // 4. 連続記録（休養日と「予定なし・チェックなし」の日は途切れも増えもしない）
+    // 5. 連続記録（休養日と「予定なし・チェックなし」の日は途切れも増えもしない）
     if (!isRest) {
       if (anyCheck) streak += 1;
       else if (kind !== 'none') streak = 0;
@@ -305,9 +368,11 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       moraleAfter: morale,
       coinsEarned: earned,
       todoCoins,
+      assignmentCoins: asg.coins,
       coinsSpent: spent.coins,
       moraleSpent: spent.morale,
       weekly,
+      overdue,
       newlyFaded: [...fadedAfter].filter(id => !fadedBefore.has(id)),
       recovered: [...fadedBefore].filter(id => !fadedAfter.has(id)),
       collapsed,
@@ -319,6 +384,7 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   let todayCoins = 0;
   let anyToday = false;
   let todoRewardsLeft = R.TODO_DAILY_CAP;
+  let assignmentRewardsLeft = R.ASSIGNMENT_DAILY_CAP;
   if (today >= save.startDate) {
     for (const g of goals) {
       const c = checkOn(save, rest, g, today);
@@ -329,6 +395,10 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     }
     todayCoins += todoCoinsOn(today);
     todoRewardsLeft = Math.max(0, R.TODO_DAILY_CAP - (todosDone.get(today) ?? []).length);
+    const asg = assignmentsOn(today);
+    todayCoins += asg.coins;
+    if (asg.any) anyToday = true;
+    assignmentRewardsLeft = Math.max(0, R.ASSIGNMENT_DAILY_CAP - asg.onTimeCount);
     coins += todayCoins;
     applySpending(today);
   }
@@ -348,12 +418,14 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     coins,
     todayCoins,
     todoRewardsLeft,
+    assignmentRewardsLeft,
     buildings,
     facilities,
     charmReady,
     charmState,
     days,
-    streak: streak + (anyToday ? 1 : 0),
+    // 休養日は連続記録を増やさない（確定時と同じ規則）
+    streak: streak + (anyToday && !rest.has(today) ? 1 : 0),
   };
 }
 
@@ -362,7 +434,7 @@ export function isFadedNow(save: SaveData, sim: SimResult, goal: Goal): boolean 
   if (!isActive(goal, sim.today)) return false;
   const st = sim.buildings[goal.id];
   if (!st || st.misses < R.FADE_AFTER_MISSES) return false;
-  return checkOn(save, new Set(save.restDays), goal, sim.today) === null;
+  return !achievedOn(save, new Set(save.restDays), goal, sim.today);
 }
 
 /**
@@ -374,10 +446,16 @@ export function isCollapseImminent(save: SaveData, sim: SimResult, goal: Goal): 
   const st = sim.buildings[goal.id];
   if (!st || st.level === 0) return false;
   const rest = new Set(save.restDays);
-  if (checkOn(save, rest, goal, sim.today) !== null) return false;
+  if (achievedOn(save, rest, goal, sim.today)) return false;
   const f = frequencyOn(goal, sim.today);
   if (!f) return false;
   const n = f.kind === 'weekly' ? f.times : 1;
+  if (f.kind === 'assignments') {
+    // 今日が期限で、まだ終わっていない課題があるときだけ（期限切れ1件で未達1回）
+    const dueToday = save.assignments.filter(a => a.goalId === goal.id && a.due === sim.today && a.doneOn === null).length;
+    if (dueToday === 0) return false;
+    return Math.floor((st.misses + dueToday) / R.COLLAPSE_EVERY) > Math.floor(st.misses / R.COLLAPSE_EVERY);
+  }
   if (f.kind === 'weekly') {
     // 今週の月曜から「週N回」でなかった目標（週の途中で追加・変更）は、今週は精算されない
     if (!isWeeklyOn(goal, weekStart(sim.today))) return false;
@@ -403,6 +481,8 @@ export interface PeriodSummary {
   collapsed: string[];
   protected: string[];
   weekly: WeeklySettlement[];
+  /** 期限を守れなかった課題のID */
+  overdue: string[];
   lastDay: DayResult;
 }
 
@@ -433,6 +513,7 @@ export function summarizeSince(sim: SimResult, after: GameDate | null): PeriodSu
     collapsed: unique(list.flatMap(d => d.collapsed)),
     protected: unique(list.flatMap(d => d.protected)),
     weekly: list.flatMap(d => d.weekly),
+    overdue: list.flatMap(d => d.overdue),
     lastDay: last,
   };
 }

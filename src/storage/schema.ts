@@ -10,6 +10,7 @@ const frequency = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('daily') }),
   z.object({ kind: z.literal('weekdays'), days: z.array(z.number().int().min(0).max(6)).min(1) }),
   z.object({ kind: z.literal('weekly'), times: z.number().int().min(1).max(7) }),
+  z.object({ kind: z.literal('assignments') }),
 ]);
 
 const goalText = z.object({
@@ -39,6 +40,15 @@ const todo = z.object({
   doneOn: gameDate.nullable(),
 });
 
+const assignment = z.object({
+  id: z.string().min(1),
+  goalId: z.string().min(1),
+  title: z.string().min(1),
+  due: gameDate,
+  createdOn: gameDate,
+  doneOn: gameDate.nullable(),
+});
+
 const facility = z.object({
   id: z.string().min(1),
   kind: z.enum(['bench', 'sakura', 'stall', 'teahouse', 'bathhouse', 'shrine']),
@@ -47,9 +57,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV2 = z
+const saveSchemaV3 = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -57,6 +67,7 @@ const saveSchemaV2 = z
     checks: z.record(gameDate, z.record(z.string(), z.enum(['min', 'ideal']))),
     diary: z.record(gameDate, z.string()),
     todos: z.array(todo),
+    assignments: z.array(assignment),
     facilities: z.array(facility),
     restDays: z.array(gameDate),
     upgrades: z.array(z.object({ date: gameDate, goalId: z.string().min(1) })),
@@ -66,10 +77,11 @@ const saveSchemaV2 = z
   })
   .refine(s => unique(s.goals, g => g.id), { message: '目標のIDが重複しています' })
   .refine(s => unique(s.todos, t => t.id), { message: 'ToDoのIDが重複しています' })
-  .refine(s => unique(s.facilities, f => f.id), { message: '施設のIDが重複しています' });
+  .refine(s => unique(s.facilities, f => f.id), { message: '施設のIDが重複しています' })
+  .refine(s => unique(s.assignments, a => a.id), { message: '課題のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV2;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV3;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -87,6 +99,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
     todos: [],
     facilities: [],
   }),
+  // v2 → v3：課題リストを追加（既存の目標の頻度は変えない。過去の判定が変わらないように）
+  2: data => ({ ...data, schemaVersion: 3, assignments: [] }),
 };
 
 export type ParseResult =

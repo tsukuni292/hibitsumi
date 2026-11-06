@@ -1,6 +1,6 @@
 import type { GameDate } from './date';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -8,7 +8,9 @@ export type CheckLevel = 'min' | 'ideal';
 export type Frequency =
   | { kind: 'daily' }
   | { kind: 'weekdays'; days: number[] }
-  | { kind: 'weekly'; times: number };
+  | { kind: 'weekly'; times: number }
+  /** 課題があるときだけ（毎日の達成率に入らず、課題リストの提出で評価する） */
+  | { kind: 'assignments' };
 
 export type BuildingKind = 'library' | 'bank' | 'news' | 'gym' | 'school' | 'plaza' | 'kura';
 
@@ -54,6 +56,17 @@ export interface Todo {
   doneOn: GameDate | null;
 }
 
+/** 期限つきの提出物（「課題があるときだけ」の目標に属する） */
+export interface Assignment {
+  id: string;
+  goalId: string;
+  title: string;
+  /** この日の終わりまでに完了すれば期限内 */
+  due: GameDate;
+  createdOn: GameDate;
+  doneOn: GameDate | null;
+}
+
 export type FacilityKind = 'bench' | 'sakura' | 'stall' | 'teahouse' | 'bathhouse' | 'shrine';
 
 export interface FacilityPurchase {
@@ -76,6 +89,7 @@ export interface SaveData {
   /** diary[日付] = 本文 */
   diary: Record<GameDate, string>;
   todos: Todo[];
+  assignments: Assignment[];
   facilities: FacilityPurchase[];
   restDays: GameDate[];
   /** 実行した順に並ぶ */

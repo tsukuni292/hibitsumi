@@ -1,10 +1,12 @@
 // ユーザーの操作。すべて「記録 + 操作 + 今日」→「新しい記録 or エラー」の純粋関数。
 // 不正な操作（2日以上前のチェック、休養日のチェックなど）はここで必ず弾く。
 import { addDays, gameDateFromLocal, isGameDate, maxDate, weekStart, type GameDate } from './date';
-import { frequencyOn, hasMinimum, isActive, isCheckable, textOn, upsertTimed } from './goals';
+import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, textOn, upsertTimed } from './goals';
 import * as R from './rules';
 import { checkOn, isFadedNow, simulate } from './simulate';
-import type { BuildingKind, CheckLevel, FacilityKind, Frequency, Goal, GoalText, GoalType, SaveData, Todo } from './types';
+import type {
+  Assignment, BuildingKind, CheckLevel, FacilityKind, Frequency, Goal, GoalText, GoalType, SaveData, Todo,
+} from './types';
 
 export type Action =
   | { type: 'setCheck'; date: GameDate; goalId: string; level: CheckLevel | null }
@@ -20,6 +22,11 @@ export type Action =
   | { type: 'editTodo'; id: string; title: string; due: GameDate | null }
   | { type: 'toggleTodo'; id: string }
   | { type: 'deleteTodo'; id: string }
+  | { type: 'addAssignment'; id: string; goalId: string; title: string; due: GameDate }
+  | { type: 'editAssignment'; id: string; title: string; due: GameDate }
+  /** date を省略すると今日。前日を指定すると「昨日完了した」として記録する */
+  | { type: 'toggleAssignment'; id: string; date?: GameDate }
+  | { type: 'deleteAssignment'; id: string }
   | { type: 'setDayStartHour'; hour: number }
   | { type: 'markSummarySeen'; upTo: GameDate }
   | { type: 'markBackup' }
@@ -61,6 +68,7 @@ export function normalizeText(t: GoalText, type: GoalType = 'check'): GoalText |
 
 export function validateFrequency(f: Frequency): Frequency | string {
   if (f.kind === 'daily') return { kind: 'daily' };
+  if (f.kind === 'assignments') return { kind: 'assignments' };
   if (f.kind === 'weekdays') {
     const days = [...new Set(f.days)].filter(d => Number.isInteger(d) && d >= 0 && d <= 6).sort((a, b) => a - b);
     if (days.length === 0) return '曜日を1つ以上選んでください';
@@ -116,6 +124,32 @@ function normalizeTodo(title: string, due: GameDate | null): { title: string; du
 
 function replaceTodo(save: SaveData, todo: Todo): SaveData {
   return { ...save, todos: save.todos.map(t => (t.id === todo.id ? todo : t)) };
+}
+
+function normalizeAssignment(title: string, due: GameDate, today: GameDate): { title: string; due: GameDate } | string {
+  const t = title.trim();
+  if (!t) return '課題の内容を入力してください';
+  if ([...t].length > R.ASSIGNMENT_TITLE_MAX) return `課題の内容は${R.ASSIGNMENT_TITLE_MAX}文字以内にしてください`;
+  if (!isGameDate(due)) return '期限の日付を入力してください';
+  if (due < today) return '期限は今日以降にしてください';
+  if (due > addDays(today, R.ASSIGNMENT_MAX_DAYS_AHEAD)) return `期限は${R.ASSIGNMENT_MAX_DAYS_AHEAD}日先までにしてください`;
+  return { title: t, due };
+}
+
+function replaceAssignment(save: SaveData, a: Assignment): SaveData {
+  return { ...save, assignments: save.assignments.map(x => (x.id === a.id ? a : x)) };
+}
+
+/**
+ * 課題を追加できる目標か。今日が「課題があるときだけ」か、この先その頻度に切り替わる予定がある目標
+ * （切り替え前から書き始められるように。評価は課題型になった日の完了から）
+ */
+export function acceptsAssignments(goal: Goal, today: GameDate): boolean {
+  if (!isActive(goal, today)) return false;
+  if (isAssignmentGoalOn(goal, today)) return true;
+  const planned = goal.frequency.filter(f => f.from > today);
+  const last = planned[planned.length - 1];
+  return last !== undefined && last.value.kind === 'assignments' && isActive(goal, last.from);
 }
 
 function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
@@ -214,7 +248,7 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
         return { ok: true, save: dropInvalidCheck(replaceGoal(save, updated), goal.id, today), note: '変更しました' };
       }
 
-      // 文章の変更は翌日から、頻度の変更は翌週の月曜から（今週・今日の判定を変えないため）
+      // 文章の変更は翌日から（今日の判定を変えないため）
       const tomorrow = addDays(today, 1);
       const nextMonday = addDays(weekStart(today), 7);
       const notes: string[] = [];
@@ -223,9 +257,21 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
         updated = { ...updated, text: upsertTimed(updated.text, tomorrow, text) };
         notes.push(goal.type === 'diary' ? '名前・文字数の変更は明日から反映されます' : '名前・ラインの変更は明日から反映されます');
       }
-      if (!sameFrequency(frequencyOn(goal, nextMonday), frequency)) {
-        updated = { ...updated, frequency: upsertTimed(updated.frequency, nextMonday, frequency) };
-        notes.push('頻度の変更は来週の月曜から反映されます');
+      // 頻度の変更：週N回が関わるとき（今の頻度か新しい頻度が週N回）は、週の集計を崩さないよう来週の月曜から。
+      // それ以外は翌日から。予定されていた変更は新しい変更で置き換える
+      const involvesWeekly = frequencyOn(goal, today)?.kind === 'weekly' || frequency.kind === 'weekly';
+      const from = involvesWeekly ? nextMonday : tomorrow;
+      const planned = goal.frequency[goal.frequency.length - 1]?.value ?? null;
+      if (!sameFrequency(planned, frequency)) {
+        const kept = updated.frequency.filter(f => f.from <= today);
+        if (sameFrequency(frequencyOn(goal, today), frequency)) {
+          // 今の頻度を選び直した＝予定していた変更の取り消し
+          updated = { ...updated, frequency: kept };
+          notes.push('予定していた頻度の変更を取り消しました');
+        } else {
+          updated = { ...updated, frequency: upsertTimed(kept, from, frequency) };
+          notes.push(involvesWeekly ? '頻度の変更は来週の月曜から反映されます' : '頻度の変更は明日から反映されます');
+        }
       }
       return { ok: true, save: replaceGoal(save, updated), note: notes.join('。') || '変更しました' };
     }
@@ -310,6 +356,64 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       if (!todo) return fail('ToDoが見つかりません');
       if (todo.doneOn !== null) return fail('完了したToDoは消せません（7日たつと自動で隠れます）');
       return { ok: true, save: { ...save, todos: save.todos.filter(t => t.id !== action.id) } };
+    }
+
+    case 'addAssignment': {
+      if (save.assignments.some(a => a.id === action.id)) return fail('同じIDの課題がすでにあります');
+      const goal = goalById(action.goalId);
+      if (!goal || !acceptsAssignments(goal, today)) return fail('この目標には課題を追加できません');
+      if (save.assignments.filter(a => a.doneOn === null).length >= R.MAX_OPEN_ASSIGNMENTS) {
+        return fail(`未完了の課題は${R.MAX_OPEN_ASSIGNMENTS}件までです`);
+      }
+      const v = normalizeAssignment(action.title, action.due, today);
+      if (typeof v === 'string') return fail(v);
+      const a: Assignment = { id: action.id, goalId: goal.id, title: v.title, due: v.due, createdOn: today, doneOn: null };
+      return { ok: true, save: { ...save, assignments: [...save.assignments, a] } };
+    }
+
+    case 'editAssignment': {
+      const a = save.assignments.find(x => x.id === action.id);
+      if (!a) return fail('課題が見つかりません');
+      if (a.doneOn !== null) return fail('完了した課題は編集できません');
+      // 期限当日・期限を過ぎた課題は内容だけ直せる（その日に期限を延ばして罰を逃れる抜け道を防ぐ）
+      const locked = a.due <= today;
+      if (locked && action.due !== a.due) return fail('期限当日・期限を過ぎた課題は、期限を変更できません');
+      const v = locked ? normalizeAssignment(action.title, today, today) : normalizeAssignment(action.title, action.due, today);
+      if (typeof v === 'string') return fail(v);
+      return { ok: true, save: replaceAssignment(save, { ...a, title: v.title, due: locked ? a.due : v.due }) };
+    }
+
+    case 'toggleAssignment': {
+      const a = save.assignments.find(x => x.id === action.id);
+      if (!a) return fail('課題が見つかりません');
+      if (a.doneOn === null) {
+        // チェックと同じく、前日の分まではさかのぼって完了にできる（日付の区切りをまたいで付け忘れたとき用）
+        const date = action.date ?? today;
+        if (date !== today && date !== yesterday) return fail('完了にできるのは今日か前日だけです');
+        if (date < save.startDate || date < a.createdOn) return fail('登録した日より前には完了にできません');
+        const late = date > a.due;
+        const sameDay = date === a.createdOn;
+        return {
+          ok: true,
+          save: replaceAssignment(save, { ...a, doneOn: date }),
+          note: late
+            ? 'お疲れさまでした（期限後のため、コインはありません）'
+            : sameDay
+              ? 'お疲れさまでした（登録した当日の完了はコインの対象外です。次は前もって登録しておきましょう）'
+              : undefined,
+        };
+      }
+      // 取り消せるのは今日完了したものだけ（確定した日のコインや罰を変えないため）
+      if (a.doneOn !== today) return fail('完了を取り消せるのは、今日完了した課題だけです');
+      return { ok: true, save: replaceAssignment(save, { ...a, doneOn: null }) };
+    }
+
+    case 'deleteAssignment': {
+      const a = save.assignments.find(x => x.id === action.id);
+      if (!a) return fail('課題が見つかりません');
+      if (a.doneOn !== null) return fail('完了した課題は消せません（7日たつと自動で隠れます）');
+      if (a.due <= today) return fail('期限当日・期限を過ぎた課題は消せません（完了にすることはできます）');
+      return { ok: true, save: { ...save, assignments: save.assignments.filter(x => x.id !== a.id) } };
     }
 
     case 'setDayStartHour': {

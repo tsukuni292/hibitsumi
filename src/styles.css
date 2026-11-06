@@ -50,7 +50,18 @@ button, input, select { font: inherit; color: inherit; }
 .coins { display: inline-flex; align-items: center; gap: 4px; }
 .coins.negative { color: var(--warn); }
 .coin-icon { width: 12px; height: 12px; background: var(--coin); border: 2px solid #cc9b40; border-radius: 50%; display: inline-block; }
-.morale-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.morale-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; width: 100%; background: none; border: none; padding: 2px 0; cursor: pointer; text-align: left; }
+.morale-row:focus-visible { outline: 3px solid var(--accent); border-radius: 6px; }
+.morale-more { margin-left: 4px; color: var(--accent); }
+.big-number { font-family: var(--pixel); font-size: 2rem; margin: 0; line-height: 1.2; }
+.good-text { color: var(--good); }
+.morale-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.morale-history li { display: grid; grid-template-columns: 3.5em 1fr 2.5em 3em; gap: 6px; align-items: baseline; }
+.morale-history li span:nth-child(3), .morale-history li span:nth-child(4) { text-align: right; font-family: var(--pixel); }
+.rule-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin: 6px 0; }
+.rule-table th, .rule-table td { border: 1px solid var(--line); padding: 4px; text-align: center; }
+.rule-list { margin: 6px 0; padding-left: 1.2em; font-size: .88rem; }
+.rule-list li { margin: 2px 0; }
 .morale-meter { flex: 1; height: 12px; background: #eadfca; border: 2px solid var(--ink); border-radius: 3px; overflow: hidden; }
 .morale-fill { height: 100%; transition: width .4s; }
 .morale-fill.mood-happy { background: #8cc56a; }
@@ -113,6 +124,13 @@ button, input, select { font: inherit; color: inherit; }
 .zoom-buttons { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
 .zoom-buttons .btn { background: rgba(255, 250, 240, .92); }
 .speech { background: var(--card); border: 2px solid var(--ink); border-radius: 12px; padding: 8px 12px; margin: 0; font-size: .92rem; }
+.speech.quote { display: grid; gap: 4px; }
+.speech.quote p { margin: 0; }
+.quote-text { font-weight: 700; font-size: 1rem; line-height: 1.7; }
+.quote-meaning { font-size: .9rem; }
+.quote-source { font-size: .82rem; color: var(--sub); text-align: right; }
+.quote-note { font-size: .8rem; color: var(--sub); }
+.quote-note summary { color: var(--accent); }
 .building-panel { background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 14px; }
 .building-panel p { margin: 6px 0; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; }
@@ -207,6 +225,13 @@ details summary { cursor: pointer; }
 .todo-due { font-size: .78rem; color: var(--sub); white-space: nowrap; }
 .todo-due.today { color: var(--accent); font-weight: 700; }
 .todo-due.overdue { color: var(--warn); font-weight: 700; }
+
+/* 課題リスト */
+.todo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.todo-main .todo-title { flex: none; }
+.small-link { font-size: .8rem; text-align: left; padding: 2px 0; }
+.overdue-item { background: var(--warn-bg); border-radius: 8px; padding: 4px; }
+.assignment-section h2 { display: flex; align-items: baseline; gap: 8px; }
 
 /* 施設 */
 .shop-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }

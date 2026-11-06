@@ -90,6 +90,20 @@ export const MAX_OPEN_TODOS = 100;
 /** 完了済みのToDoを一覧に残す日数 */
 export const TODO_DONE_VISIBLE_DAYS = 7;
 
+// ---- 課題（期限つきの提出物） ----
+export const ASSIGNMENT_ONTIME_COIN = 15;
+export const ASSIGNMENT_EARLY_BONUS = 5;
+/** 期限のこの日数以上前に完了すると早め提出ボーナス */
+export const ASSIGNMENT_EARLY_DAYS = 2;
+/** コインがもらえる完了は1日この件数まで */
+export const ASSIGNMENT_DAILY_CAP = 3;
+/** 期限切れ1件ごとのやる気の減少 */
+export const ASSIGNMENT_OVERDUE_PENALTY = 3;
+export const ASSIGNMENT_TITLE_MAX = 60;
+/** 期限は今日からこの日数先まで */
+export const ASSIGNMENT_MAX_DAYS_AHEAD = 180;
+export const MAX_OPEN_ASSIGNMENTS = 100;
+
 // ---- 施設 ----
 export interface FacilityDef {
   label: string;

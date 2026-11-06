@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { validCheckCount, type Action } from '../core/actions';
+import { acceptsAssignments, validCheckCount, type Action } from '../core/actions';
 import { addDays, dateRange, diffDays, weekStart, type GameDate } from '../core/date';
 import { BUILDING_LABEL } from '../core/defaults';
-import { describeFrequency, frequencyOn, hasMinimum, isCheckable, isWeeklyOn, textOn } from '../core/goals';
+import { describeFrequency, frequencyOn, hasMinimum, isActive, isCheckable, isWeeklyOn, textOn } from '../core/goals';
 import { COINS, REST_DAYS_PER_WEEK } from '../core/rules';
 import { checkOn, isCollapseImminent, type SimResult } from '../core/simulate';
 import type { CheckLevel, Goal, SaveData } from '../core/types';
 import { formatDate, formatShort } from '../app/format';
+import { AssignmentSection } from './AssignmentSection';
 import { DiaryEditor } from './DiaryEditor';
 import { TodoSection } from './TodoSection';
 
@@ -29,6 +30,11 @@ export function TodayScreen({ save, sim, today, dispatch, newId, onGoSettings }:
   const needBackup = diffDays(today, backupBase) >= 7;
   const showYesterday = yesterday >= save.startDate;
   const diaryGoal = save.goals.find(g => g.type === 'diary' && isCheckable(g, today));
+  // 課題リストを出す目標：課題型の目標（明日から切り替わるものも）と、未完了の課題が残っている目標
+  // （削除した目標は出さない）
+  const assignmentGoals = save.goals.filter(
+    g => isActive(g, today) && (acceptsAssignments(g, today) || save.assignments.some(a => a.goalId === g.id && a.doneOn === null)),
+  );
 
   return (
     <div className="screen">
@@ -44,7 +50,8 @@ export function TodayScreen({ save, sim, today, dispatch, newId, onGoSettings }:
       {isRest ? (
         <>
           <div className="rest-card">
-            <p>今日は<strong>休養日</strong>です。やる気もさびれも変わりません。ゆっくり休みましょう。</p>
+            <p>今日は<strong>休養日</strong>です。達成度によるやる気やさびれは変わりません。ゆっくり休みましょう。</p>
+            <p className="hint">ただし、今日が期限の課題は休養日でも期限切れになります（実際の締切は休めないため）。</p>
             <button type="button" className="btn" onClick={() => dispatch({ type: 'cancelRest' })}>休養日を取り消す</button>
           </div>
           {/* 休養日でも日記は書ける（判定はなし） */}
@@ -57,6 +64,10 @@ export function TodayScreen({ save, sim, today, dispatch, newId, onGoSettings }:
       ) : (
         <GoalList save={save} sim={sim} date={today} dispatch={dispatch} />
       )}
+
+      {assignmentGoals.map(g => (
+        <AssignmentSection key={g.id} save={save} sim={sim} today={today} goal={g} dispatch={dispatch} newId={newId} />
+      ))}
 
       <TodoSection save={save} sim={sim} today={today} dispatch={dispatch} newId={newId} />
 

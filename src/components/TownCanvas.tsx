@@ -13,9 +13,14 @@ interface Props {
   onSelect: (key: string | null) => void;
   /** 1アート画素あたりの CSS ピクセル数 */
   zoom: number;
+  /** 住民をタップしたとき（住民の番号） */
+  onResidentTap?: (index: number) => void;
 }
 
 const TAP_SLOP = 6; // これ以上動いたらドラッグ扱い（CSS px）
+const RESIDENT = { w: 12, h: 16 };
+const RESIDENT_HIT_MARGIN = 3; // 小さくて動くので、当たり判定を少し広げる（アート画素）
+const TALK_MS = 4000;
 
 function pingPong(t: number, speed: number, offset: number, range: number): number {
   if (range <= 0) return 0;
@@ -23,7 +28,31 @@ function pingPong(t: number, speed: number, offset: number, range: number): numb
   return p < range ? p : range * 2 - p;
 }
 
-export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom }: Props) {
+/** 頭の上の小さな吹き出し（白地に「…」）。cx は中心、bottom は下端（アート座標） */
+function drawSpeechMark(ctx: CanvasRenderingContext2D, cx: number, bottom: number) {
+  const w = 9;
+  const h = 6;
+  const x = Math.round(cx - w / 2);
+  const y = bottom - h - 2;
+  ctx.fillStyle = '#3b2a2e';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillRect(x + 3, y + h, 2, 2); // しっぽ
+  ctx.fillStyle = '#fffaf0';
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.fillStyle = '#3b2a2e';
+  for (const dx of [2, 4, 6]) ctx.fillRect(x + dx, y + 2, 1, 2);
+}
+
+/** i 番目の住民の位置（描画とタップ判定で同じ計算を使う）。t は秒 */
+function residentPos(i: number, t: number, lay: TownLayout): { x: number; y: number } | null {
+  const lane = lay.lanes[i % lay.lanes.length];
+  if (!lane) return null;
+  const speed = 5 + ((i * 7) % 9);
+  const x = lane.x0 + pingPong(t, speed, i * 37, lane.x1 - lane.x0 - RESIDENT.w);
+  return { x: Math.round(x), y: lane.y };
+}
+
+export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 描画ループから最新の props を読むための参照
@@ -33,6 +62,10 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
   const view = useRef({ cssW: 1, cssH: 1, dpr: 1 });
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onResidentTapRef = useRef(onResidentTap);
+  onResidentTapRef.current = onResidentTap;
+  /** 話している住民（吹き出しの印を出す） */
+  const talk = useRef<{ index: number; until: number } | null>(null);
 
   /**
    * 実際に描かれる倍率（CSS px / アート画素）。
@@ -135,16 +168,16 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
 
       const t = ts / 1000;
       const frame = Math.floor(t / 0.25) % 2;
+      const talking = talk.current && ts < talk.current.until ? talk.current.index : -1;
       for (let i = 0; i < count; i++) {
-        const lane = lay.lanes[i % lay.lanes.length];
-        if (!lane) break;
+        const pos = residentPos(i, t, lay);
+        if (!pos) break;
         const look = residentLook(i);
         const mood = residentMood(i, m);
         const sp = getSprite(`res_${mood}_${frame}`, { swap: look.swap, swapKey: look.key });
         if (!sp) continue;
-        const speed = 5 + ((i * 7) % 9);
-        const x = lane.x0 + pingPong(t, speed, i * 37, lane.x1 - lane.x0 - sp.width);
-        ctx.drawImage(sp, Math.round(x), lane.y);
+        ctx.drawImage(sp, pos.x, pos.y);
+        if (i === talking) drawSpeechMark(ctx, pos.x + RESIDENT.w / 2, pos.y - 2);
       }
 
       if (sel) {
@@ -170,7 +203,11 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (drag.current) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // 捕捉できなくても、ドラッグ・タップ自体は続けられる
+    }
     drag.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY, cx: cam.current.x, cy: cam.current.y, moved: false };
   };
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -194,6 +231,22 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
     const z = effZoom();
     const ax = cam.current.x + (e.clientX - rect.left) / z;
     const ay = cam.current.y + (e.clientY - rect.top) / z;
+
+    // 住民は建物より手前に描くので先に調べる（後に描いた住民ほど手前）
+    if (onResidentTapRef.current) {
+      const now = performance.now();
+      const m = RESIDENT_HIT_MARGIN;
+      for (let i = live.current.residents - 1; i >= 0; i--) {
+        const pos = residentPos(i, now / 1000, live.current.layout);
+        if (!pos) continue;
+        if (ax >= pos.x - m && ax < pos.x + RESIDENT.w + m && ay >= pos.y - m && ay < pos.y + RESIDENT.h + m) {
+          talk.current = { index: i, until: now + TALK_MS };
+          onResidentTapRef.current(i);
+          return;
+        }
+      }
+    }
+
     // 手前（下）にある建物を優先
     const hit = [...live.current.layout.items].reverse().find(
       it => (it.goalId || it.facilityId) && ax >= it.x && ax < it.x + it.w && ay >= it.y && ay < it.y + it.h,
@@ -212,7 +265,7 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        aria-label="街のようす。ドラッグで移動、建物をタップで選択"
+        aria-label="街のようす。ドラッグで移動、建物をタップで選択、住民をタップで名言"
         role="img"
       />
     </div>

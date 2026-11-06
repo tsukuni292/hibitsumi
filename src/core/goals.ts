@@ -49,6 +49,12 @@ export function isWeeklyOn(goal: Goal, date: GameDate): boolean {
   return frequencyOn(goal, date)?.kind === 'weekly';
 }
 
+/** 「課題があるときだけ」の目標か（チェックはせず、課題リストの提出で評価する） */
+export function isAssignmentGoalOn(goal: Goal, date: GameDate): boolean {
+  if (!isActive(goal, date)) return false;
+  return frequencyOn(goal, date)?.kind === 'assignments';
+}
+
 /** その日にチェックできるか（予定日の目標、または週N回の目標） */
 export function isCheckable(goal: Goal, date: GameDate): boolean {
   return isScheduledDaily(goal, date) || isWeeklyOn(goal, date);
@@ -68,5 +74,6 @@ export function idealCharsOn(goal: Goal, date: GameDate): number {
 export function describeFrequency(f: Frequency): string {
   if (f.kind === 'daily') return '毎日';
   if (f.kind === 'weekly') return `週${f.times}回`;
+  if (f.kind === 'assignments') return '課題があるとき';
   return [...f.days].sort((a, b) => a - b).map(d => WEEKDAY_LABELS[d]).join('・');
 }

@@ -7,6 +7,7 @@ import { isCollapseImminent, summarizeSince } from './core/simulate';
 import { importJson } from './storage/db';
 import { DiaryScreen } from './components/DiaryScreen';
 import { Header } from './components/Header';
+import { MoraleModal } from './components/MoraleModal';
 import { SettingsScreen } from './components/SettingsScreen';
 import { SummaryModal } from './components/SummaryModal';
 import { TodayScreen } from './components/TodayScreen';
@@ -19,6 +20,7 @@ export function App() {
   const game = useGame();
   const { load, save, sim, today, dispatch, toasts } = game;
   const [tab, setTab] = useState<Tab>('today');
+  const [moraleOpen, setMoraleOpen] = useState(false);
 
   const stage = useMemo(() => {
     if (!save || !sim) return 'hamlet' as const;
@@ -87,7 +89,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Header sim={sim} stage={stage} />
+      <Header sim={sim} stage={stage} onMoraleClick={() => setMoraleOpen(true)} />
       <main className="app-main">
         {tab === 'today' && <TodayScreen save={save} sim={sim} today={today} dispatch={dispatch} newId={game.newId} onGoSettings={() => setTab('settings')} />}
         {tab === 'diary' && <DiaryScreen save={save} today={today} onEdit={() => setTab('today')} />}
@@ -104,6 +106,7 @@ export function App() {
       <div className="toasts" aria-live="polite">
         {toasts.map(t => <div key={t.id} className={`toast ${t.tone}`}>{t.text}</div>)}
       </div>
+      {moraleOpen && !summary && <MoraleModal save={save} sim={sim} today={today} onClose={() => setMoraleOpen(false)} />}
       {summary && (
         <SummaryModal summary={summary} save={save} imminent={imminent} onClose={() => dispatch({ type: 'markSummarySeen', upTo: addDays(today, -1) })} />
       )}

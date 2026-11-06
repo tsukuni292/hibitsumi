@@ -39,6 +39,7 @@ export function save(goals: Goal[], patch: Partial<SaveData> = {}): SaveData {
     checks: {},
     diary: {},
     todos: [],
+    assignments: [],
     facilities: [],
     restDays: [],
     upgrades: [],

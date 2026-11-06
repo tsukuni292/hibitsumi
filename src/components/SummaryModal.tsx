@@ -1,6 +1,6 @@
 import { BUILDING_LABEL } from '../core/defaults';
 import { textOn } from '../core/goals';
-import { moodForMorale } from '../core/rules';
+import { ASSIGNMENT_OVERDUE_PENALTY, moodForMorale } from '../core/rules';
 import type { PeriodSummary } from '../core/simulate';
 import type { SaveData } from '../core/types';
 import { formatDate, formatShort, signed } from '../app/format';
@@ -61,6 +61,18 @@ export function SummaryModal({ summary, save, imminent, onClose }: Props) {
                 <li key={`${w.goalId}-${i}`}>{nameOf(w.goalId)}：{w.count}/{w.times}回（やる気 {signed(w.delta)}）</li>
               ))}
             </ul>
+          </div>
+        )}
+        {summary.overdue.length > 0 && (
+          <div className="summary-section warn">
+            <h3>期限を守れなかった課題</h3>
+            <ul>
+              {summary.overdue.map(id => {
+                const a = save.assignments.find(x => x.id === id);
+                return <li key={id}>{a ? `${a.title}（期限 ${formatShort(a.due)}）` : '（削除された課題）'}</li>;
+              })}
+            </ul>
+            <p className="hint">1件ごとにやる気 −{ASSIGNMENT_OVERDUE_PENALTY}。次の課題は早めに片づけましょう。</p>
           </div>
         )}
         {summary.collapsed.length > 0 && (
