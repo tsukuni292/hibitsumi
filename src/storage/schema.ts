@@ -47,6 +47,18 @@ const assignment = z.object({
   due: gameDate,
   createdOn: gameDate,
   doneOn: gameDate.nullable(),
+  weeklyId: z.string().min(1).optional(),
+  preRegistered: z.literal(true).optional(),
+});
+
+const weeklyAssignment = z.object({
+  id: z.string().min(1),
+  goalId: z.string().min(1),
+  title: z.string().min(1),
+  issueDay: z.number().int().min(0).max(6),
+  dueDay: z.number().int().min(0).max(6),
+  createdOn: gameDate,
+  issuedThrough: gameDate,
 });
 
 const facility = z.object({
@@ -57,9 +69,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV3 = z
+const saveSchemaV4 = z
   .object({
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(4),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -68,6 +80,7 @@ const saveSchemaV3 = z
     diary: z.record(gameDate, z.string()),
     todos: z.array(todo),
     assignments: z.array(assignment),
+    weeklyAssignments: z.array(weeklyAssignment),
     facilities: z.array(facility),
     restDays: z.array(gameDate),
     upgrades: z.array(z.object({ date: gameDate, goalId: z.string().min(1) })),
@@ -78,10 +91,11 @@ const saveSchemaV3 = z
   .refine(s => unique(s.goals, g => g.id), { message: '目標のIDが重複しています' })
   .refine(s => unique(s.todos, t => t.id), { message: 'ToDoのIDが重複しています' })
   .refine(s => unique(s.facilities, f => f.id), { message: '施設のIDが重複しています' })
-  .refine(s => unique(s.assignments, a => a.id), { message: '課題のIDが重複しています' });
+  .refine(s => unique(s.assignments, a => a.id), { message: '課題のIDが重複しています' })
+  .refine(s => unique(s.weeklyAssignments, w => w.id), { message: '毎週の課題のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV3;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV4;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -101,6 +115,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
   }),
   // v2 → v3：課題リストを追加（既存の目標の頻度は変えない。過去の判定が変わらないように）
   2: data => ({ ...data, schemaVersion: 3, assignments: [] }),
+  // v3 → v4：毎週の課題を追加
+  3: data => ({ ...data, schemaVersion: 4, weeklyAssignments: [] }),
 };
 
 export type ParseResult =

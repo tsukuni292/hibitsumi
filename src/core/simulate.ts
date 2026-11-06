@@ -110,11 +110,16 @@ export function assignmentReward(a: Assignment, doneOn: GameDate): number {
 
 /**
  * 課題の完了を評価の対象にするか。
- * - 登録した翌日以降の完了だけ（その場で登録してすぐ完了、の抜け道を防ぐ）
+ * - 登録した翌日以降の完了だけ（その場で登録してすぐ完了、の抜け道を防ぐ）。毎週の課題から出たものは前もって登録してあるので、出た当日から
  * - その日に担当の目標が「課題があるときだけ」であること（頻度を戻した目標・削除した目標は対象外）
  */
 export function countsAsAssignmentWork(goal: Goal | undefined, a: Assignment, doneOn: GameDate): boolean {
-  return goal !== undefined && doneOn > a.createdOn && isAssignmentGoalOn(goal, doneOn);
+  return goal !== undefined && isRegisteredBefore(a, doneOn) && isAssignmentGoalOn(goal, doneOn);
+}
+
+/** 完了した日より前に登録してあったか */
+export function isRegisteredBefore(a: Assignment, doneOn: GameDate): boolean {
+  return doneOn > a.createdOn || (a.preRegistered === true && doneOn === a.createdOn);
 }
 
 /** その日に担当目標を「達成した」か（チェック・日記、または課題を期限内に完了） */

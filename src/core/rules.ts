@@ -103,6 +103,9 @@ export const ASSIGNMENT_TITLE_MAX = 60;
 /** 期限は今日からこの日数先まで */
 export const ASSIGNMENT_MAX_DAYS_AHEAD = 180;
 export const MAX_OPEN_ASSIGNMENTS = 100;
+export const MAX_WEEKLY_ASSIGNMENTS = 20;
+/** しばらく開かなかったとき、毎週の課題はこの日数前の分までさかのぼって出す */
+export const WEEKLY_CATCHUP_DAYS = 14;
 
 // ---- 施設 ----
 export interface FacilityDef {

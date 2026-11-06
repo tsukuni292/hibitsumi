@@ -1,6 +1,6 @@
 import type { GameDate } from './date';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -65,6 +65,24 @@ export interface Assignment {
   due: GameDate;
   createdOn: GameDate;
   doneOn: GameDate | null;
+  /** 毎週の課題から自動で出たもの（その毎週の課題のID） */
+  weeklyId?: string;
+  /** 前もって登録してあった（毎週の課題から出た）ので、出た当日の完了もコインの対象 */
+  preRegistered?: true;
+}
+
+/** 毎週の課題。出る曜日になると、課題リストに自動で1件追加する */
+export interface WeeklyAssignment {
+  id: string;
+  goalId: string;
+  title: string;
+  /** 課題が出る曜日（0=月 … 6=日） */
+  issueDay: number;
+  /** 締切の曜日。出た日の翌日以降で最初のこの曜日（出る曜日と同じなら1週間後） */
+  dueDay: number;
+  createdOn: GameDate;
+  /** この日の分まで課題を出し終えた */
+  issuedThrough: GameDate;
 }
 
 export type FacilityKind = 'bench' | 'sakura' | 'stall' | 'teahouse' | 'bathhouse' | 'shrine';
@@ -90,6 +108,7 @@ export interface SaveData {
   diary: Record<GameDate, string>;
   todos: Todo[];
   assignments: Assignment[];
+  weeklyAssignments: WeeklyAssignment[];
   facilities: FacilityPurchase[];
   restDays: GameDate[];
   /** 実行した順に並ぶ */

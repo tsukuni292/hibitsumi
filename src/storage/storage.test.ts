@@ -29,7 +29,7 @@ describe('形式チェック', () => {
     expect(parseSave({ ...s, goals: [...s.goals, s.goals[0]] })).toMatchObject({ ok: false, error: expect.stringContaining('重複') });
   });
 
-  it('v1 のデータを最新（v3）まで移行できる', () => {
+  it('v1 のデータを最新（v4）まで移行できる', () => {
     const v2 = fresh();
     const v1 = {
       ...v2,
@@ -41,7 +41,8 @@ describe('形式チェック', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.migratedFrom).toBe(1);
-    expect(r.save.schemaVersion).toBe(3);
+    expect(r.save.schemaVersion).toBe(4);
+    expect(r.save.weeklyAssignments).toEqual([]);
     expect(r.save.assignments).toEqual([]);
     expect(r.save.goals.every(g => g.type === 'check')).toBe(true);
     expect(r.save.diary).toEqual({});
@@ -51,11 +52,18 @@ describe('形式チェック', () => {
 
   it('v2 → v3：課題リストが空で追加され、目標の頻度は変わらない', () => {
     const v3 = fresh();
-    const { assignments: _a, ...rest } = v3;
+    const { assignments: _a, weeklyAssignments: _w, ...rest } = v3;
     const r = parseSave(JSON.parse(JSON.stringify({ ...rest, schemaVersion: 2 })));
     expect(r.ok && r.migratedFrom).toBe(2);
     expect(r.ok && r.save.assignments).toEqual([]);
     expect(r.ok && r.save.goals).toEqual(v3.goals);
+  });
+
+  it('v3 → v4：毎週の課題が空で追加される', () => {
+    const { weeklyAssignments: _w, ...rest } = fresh();
+    const r = parseSave(JSON.parse(JSON.stringify({ ...rest, schemaVersion: 3 })));
+    expect(r.ok && r.migratedFrom).toBe(3);
+    expect(r.ok && r.save.weeklyAssignments).toEqual([]);
   });
 
   it('移行して読み込むと、移行前の控えを残し revision を上げる', async () => {
@@ -65,7 +73,7 @@ describe('形式チェック', () => {
     const st = createStore(DB_NAME, STORE_NAME);
     await set('save', JSON.parse(JSON.stringify({ ...v1, diary: undefined, todos: undefined, facilities: undefined })), st);
     const loaded = await loadSave();
-    expect(loaded?.schemaVersion).toBe(3);
+    expect(loaded?.schemaVersion).toBe(4);
     expect(loaded?.revision).toBe(6);
     expect((await get('backup:pre-migration-v1', st) as { schemaVersion: number }).schemaVersion).toBe(1);
   });

@@ -240,9 +240,9 @@ export function useGame(): Game {
   const today = save ? currentGameDate(save, now) : gameDateFromLocal(now, DEFAULT_DAY_START);
   const sim = useMemo(() => (save ? simulate(save, today) : null), [save, today]);
 
-  // 日付が進んだら「最後に見た日」を記録（時計の巻き戻し対策）
+  // 日付が進んだら「最後に見た日」を記録し（時計の巻き戻し対策）、毎週の課題を出す
   useEffect(() => {
-    if (save && save.lastSeenDate < today) dispatch({ type: 'touch' });
+    if (save && (save.lastSeenDate < today || save.weeklyAssignments.some(w => w.issuedThrough < today))) dispatch({ type: 'touch' });
   }, [save, today, dispatch]);
 
   return { load, save, today, sim, toasts, dispatch, notify, importSave, newId };

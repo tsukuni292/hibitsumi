@@ -3,10 +3,11 @@
 import { addDays, gameDateFromLocal, isGameDate, maxDate, weekStart, type GameDate } from './date';
 import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, textOn, upsertTimed } from './goals';
 import * as R from './rules';
-import { checkOn, isFadedNow, simulate } from './simulate';
+import { checkOn, isFadedNow, isRegisteredBefore, simulate } from './simulate';
 import type {
-  Assignment, BuildingKind, CheckLevel, FacilityKind, Frequency, Goal, GoalText, GoalType, SaveData, Todo,
+  Assignment, BuildingKind, CheckLevel, FacilityKind, Frequency, Goal, GoalText, GoalType, SaveData, Todo, WeeklyAssignment,
 } from './types';
+import { issueWeeklyAssignments, lastIssueDate, weeklyInstance } from './weekly';
 
 export type Action =
   | { type: 'setCheck'; date: GameDate; goalId: string; level: CheckLevel | null }
@@ -27,6 +28,10 @@ export type Action =
   /** date を省略すると今日。前日を指定すると「昨日完了した」として記録する */
   | { type: 'toggleAssignment'; id: string; date?: GameDate }
   | { type: 'deleteAssignment'; id: string }
+  /** 毎週の課題。issueDay・dueDay は 0=月 … 6=日 */
+  | { type: 'addWeeklyAssignment'; id: string; goalId: string; title: string; issueDay: number; dueDay: number }
+  /** 毎週の課題をやめる（もう出ている課題はそのまま残す） */
+  | { type: 'deleteWeeklyAssignment'; id: string }
   | { type: 'setDayStartHour'; hour: number }
   | { type: 'markSummarySeen'; upTo: GameDate }
   | { type: 'markBackup' }
@@ -126,10 +131,16 @@ function replaceTodo(save: SaveData, todo: Todo): SaveData {
   return { ...save, todos: save.todos.map(t => (t.id === todo.id ? todo : t)) };
 }
 
-function normalizeAssignment(title: string, due: GameDate, today: GameDate): { title: string; due: GameDate } | string {
+function normalizeAssignmentTitle(title: string): string | { error: string } {
   const t = title.trim();
-  if (!t) return '課題の内容を入力してください';
-  if ([...t].length > R.ASSIGNMENT_TITLE_MAX) return `課題の内容は${R.ASSIGNMENT_TITLE_MAX}文字以内にしてください`;
+  if (!t) return { error: '課題の内容を入力してください' };
+  if ([...t].length > R.ASSIGNMENT_TITLE_MAX) return { error: `課題の内容は${R.ASSIGNMENT_TITLE_MAX}文字以内にしてください` };
+  return t;
+}
+
+function normalizeAssignment(title: string, due: GameDate, today: GameDate): { title: string; due: GameDate } | string {
+  const t = normalizeAssignmentTitle(title);
+  if (typeof t !== 'string') return t.error;
   if (!isGameDate(due)) return '期限の日付を入力してください';
   if (due < today) return '期限は今日以降にしてください';
   if (due > addDays(today, R.ASSIGNMENT_MAX_DAYS_AHEAD)) return `期限は${R.ASSIGNMENT_MAX_DAYS_AHEAD}日先までにしてください`;
@@ -392,7 +403,7 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
         if (date !== today && date !== yesterday) return fail('完了にできるのは今日か前日だけです');
         if (date < save.startDate || date < a.createdOn) return fail('登録した日より前には完了にできません');
         const late = date > a.due;
-        const sameDay = date === a.createdOn;
+        const sameDay = !isRegisteredBefore(a, date);
         return {
           ok: true,
           save: replaceAssignment(save, { ...a, doneOn: date }),
@@ -414,6 +425,37 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       if (a.doneOn !== null) return fail('完了した課題は消せません（7日たつと自動で隠れます）');
       if (a.due <= today) return fail('期限当日・期限を過ぎた課題は消せません（完了にすることはできます）');
       return { ok: true, save: { ...save, assignments: save.assignments.filter(x => x.id !== a.id) } };
+    }
+
+    case 'addWeeklyAssignment': {
+      if (save.weeklyAssignments.some(w => w.id === action.id)) return fail('同じIDの毎週の課題がすでにあります');
+      const goal = goalById(action.goalId);
+      if (!goal || !acceptsAssignments(goal, today)) return fail('この目標には課題を追加できません');
+      if (save.weeklyAssignments.length >= R.MAX_WEEKLY_ASSIGNMENTS) return fail(`毎週の課題は${R.MAX_WEEKLY_ASSIGNMENTS}件までです`);
+      const title = normalizeAssignmentTitle(action.title);
+      if (typeof title !== 'string') return fail(title.error);
+      const isDay = (d: number) => Number.isInteger(d) && d >= 0 && d <= 6;
+      if (!isDay(action.issueDay) || !isDay(action.dueDay)) return fail('曜日を選んでください');
+      const w: WeeklyAssignment = {
+        id: action.id, goalId: goal.id, title, issueDay: action.issueDay, dueDay: action.dueDay, createdOn: today, issuedThrough: today,
+      };
+      // 今週すでに出ていて締切がまだ先の分は、今日登録したものとして追加する（当日の完了はコインの対象外）
+      const current = { ...weeklyInstance(w, lastIssueDate(w.issueDay, today), false), createdOn: today };
+      const addCurrent = current.due > today && !save.assignments.some(a => a.id === current.id)
+        && save.assignments.filter(a => a.doneOn === null).length < R.MAX_OPEN_ASSIGNMENTS;
+      return {
+        ok: true,
+        save: {
+          ...save,
+          weeklyAssignments: [...save.weeklyAssignments, w],
+          assignments: addCurrent ? [...save.assignments, current] : save.assignments,
+        },
+      };
+    }
+
+    case 'deleteWeeklyAssignment': {
+      if (!save.weeklyAssignments.some(w => w.id === action.id)) return fail('毎週の課題が見つかりません');
+      return { ok: true, save: { ...save, weeklyAssignments: save.weeklyAssignments.filter(w => w.id !== action.id) } };
     }
 
     case 'setDayStartHour': {
@@ -451,5 +493,7 @@ export function rebaseActions(base: SaveData, actions: Action[], today: GameDate
 export function applyAction(save: SaveData, action: Action, today: GameDate): ActionResult {
   const result = apply(save, action, today);
   if (!result.ok) return result;
-  return { ...result, save: { ...result.save, lastSeenDate: maxDate(result.save.lastSeenDate, today) } };
+  // 操作のたびに、今日までに出る毎週の課題を課題リストに足す
+  const next = issueWeeklyAssignments(result.save, today);
+  return { ...result, save: { ...next, lastSeenDate: maxDate(next.lastSeenDate, today) } };
 }
