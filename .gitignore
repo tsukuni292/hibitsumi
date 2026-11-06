@@ -4,3 +4,4 @@ dev-dist/
 *.log
 # この PC 専用の設定（ローカルのパスを含む）
 .claude/
+*.tsbuildinfo
