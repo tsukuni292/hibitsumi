@@ -4,11 +4,15 @@ import { BUILDING_LABEL } from '../core/defaults';
 import { frequencyOn, textOn } from '../core/goals';
 import type { BuildingKind, Frequency, Goal, GoalText, GoalType } from '../core/types';
 import { LIMITS } from '../core/actions';
+import { DEFAULT_PARTS, PART_KEYS, type BuildingLook, type BuildingParts } from '../core/buildingLook';
+import { BuildingDesigner } from './BuildingDesigner';
 import { DIARY_DEFAULT_IDEAL_CHARS, DIARY_MAX_IDEAL_CHARS } from '../core/rules';
 
 export interface GoalFormValue {
   goalType: GoalType;
   building: BuildingKind;
+  /** building が custom のとき */
+  look?: BuildingLook;
   text: GoalText;
   frequency: Frequency;
 }
@@ -34,6 +38,10 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
   const [idealChars, setIdealChars] = useState(latestText?.idealChars ?? DIARY_DEFAULT_IDEAL_CHARS);
   const [building, setBuilding] = useState<BuildingKind>(goal?.building ?? 'library');
   const [name, setName] = useState(latestText?.name ?? '');
+  const [buildingName, setBuildingName] = useState(goal?.look?.name ?? '');
+  const [parts, setParts] = useState<BuildingParts>(() =>
+    goal?.look ? (Object.fromEntries(PART_KEYS.map(k => [k, goal.look![k]])) as unknown as BuildingParts) : DEFAULT_PARTS,
+  );
   const [ideal, setIdeal] = useState(latestText?.ideal ?? '');
   const [minimum, setMinimum] = useState(latestText?.minimum ?? '');
   const [kind, setKind] = useState<Frequency['kind']>(latestFreq?.kind ?? 'daily');
@@ -50,7 +58,8 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
         // 課題型はチェックしないのでラインは使わない。頻度だけ変えたときに「ラインの変更」扱いにならないよう元の値を残す
         ? { name, ideal: ideal.trim() || '期限内に提出', minimum: minimum.trim() ? minimum : null }
         : { name, ideal, minimum: minimum.trim() ? minimum : null };
-    onSubmit({ goalType, building, text, frequency });
+    const look = building === 'custom' ? { name: buildingName, ...parts } : undefined;
+    onSubmit({ goalType, building, look, text, frequency });
   };
 
   const toggleDay = (d: number) => setDays(ds => (ds.includes(d) ? ds.filter(x => x !== d) : [...ds, d].sort((a, b) => a - b)));
@@ -160,9 +169,10 @@ export function GoalForm({ goal, today, canAddDiary, onSubmit, onCancel }: Props
       <label className="field">
         <span>担当の建物</span>
         <select value={building} onChange={e => setBuilding(e.target.value as BuildingKind)}>
-          {KINDS.map(k => <option key={k} value={k}>{BUILDING_LABEL[k]}</option>)}
+          {KINDS.map(k => <option key={k} value={k}>{k === 'custom' ? '自分で作る（部品を選ぶ）' : BUILDING_LABEL[k]}</option>)}
         </select>
       </label>
+      {building === 'custom' && <BuildingDesigner name={buildingName} parts={parts} onName={setBuildingName} onParts={setParts} />}
 
       <div className="form-actions">
         <button type="button" className="btn" onClick={onCancel}>やめる</button>

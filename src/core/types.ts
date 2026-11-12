@@ -1,6 +1,7 @@
+import type { BuildingLook } from './buildingLook';
 import type { GameDate } from './date';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -12,7 +13,8 @@ export type Frequency =
   /** 課題があるときだけ（毎日の達成率に入らず、課題リストの提出で評価する） */
   | { kind: 'assignments' };
 
-export type BuildingKind = 'library' | 'bank' | 'news' | 'gym' | 'school' | 'plaza' | 'kura';
+/** custom＝自分で作った建物（見た目は Goal.look） */
+export type BuildingKind = 'library' | 'bank' | 'news' | 'gym' | 'school' | 'plaza' | 'kura' | 'custom';
 
 /** check＝自分でチェックする目標、diary＝日記（文字数で自動判定） */
 export type GoalType = 'check' | 'diary';
@@ -36,6 +38,8 @@ export interface Goal {
   id: string;
   type: GoalType;
   building: BuildingKind;
+  /** building が custom のときの名前と部品 */
+  look?: BuildingLook;
   createdOn: GameDate;
   /** この日以降は対象外（アーカイブ）。null なら有効 */
   archivedFrom: GameDate | null;

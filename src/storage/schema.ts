@@ -1,7 +1,8 @@
 // 保存データの形式チェックと、古いバージョンからの移行
 import { z } from 'zod';
 import { isGameDate } from '../core/date';
-import { DIARY_MAX_IDEAL_CHARS } from '../core/rules';
+import { MINI_KINDS, PART_OPTIONS } from '../core/buildingLook';
+import { BUILDING_NAME_MAX, DIARY_MAX_IDEAL_CHARS } from '../core/rules';
 import { SCHEMA_VERSION, type SaveData } from '../core/types';
 
 const gameDate = z.string().refine(isGameDate, { message: '日付の形式が正しくありません' });
@@ -22,15 +23,29 @@ const goalText = z.object({
 
 const timed = <T extends z.ZodType>(value: T) => z.array(z.object({ from: gameDate, value })).min(1);
 
+const keysOf = <T extends Record<string, string>>(o: T) => Object.keys(o) as [keyof T & string, ...Array<keyof T & string>];
+
+const look = z.object({
+  name: z.string().min(1).refine(s => [...s].length <= BUILDING_NAME_MAX, { message: '建物の名前が長すぎます' }),
+  roof: z.enum(keysOf(PART_OPTIONS.roof)),
+  roofColor: z.enum(keysOf(PART_OPTIONS.roofColor)),
+  wall: z.enum(keysOf(PART_OPTIONS.wall)),
+  door: z.enum(keysOf(PART_OPTIONS.door)),
+  sign: z.enum(keysOf(PART_OPTIONS.sign)),
+  miniLeft: z.enum(keysOf(MINI_KINDS)),
+  miniRight: z.enum(keysOf(MINI_KINDS)),
+});
+
 const goal = z.object({
   id: z.string().min(1),
   type: z.enum(['check', 'diary']),
-  building: z.enum(['library', 'bank', 'news', 'gym', 'school', 'plaza', 'kura']),
+  building: z.enum(['library', 'bank', 'news', 'gym', 'school', 'plaza', 'kura', 'custom']),
+  look: look.optional(),
   createdOn: gameDate,
   archivedFrom: gameDate.nullable(),
   text: timed(goalText),
   frequency: timed(frequency),
-});
+}).refine(g => g.building !== 'custom' || g.look !== undefined, { message: '自分で作った建物の見た目がありません' });
 
 const todo = z.object({
   id: z.string().min(1),
@@ -69,9 +84,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV4 = z
+const saveSchemaV5 = z
   .object({
-    schemaVersion: z.literal(4),
+    schemaVersion: z.literal(5),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -95,7 +110,7 @@ const saveSchemaV4 = z
   .refine(s => unique(s.weeklyAssignments, w => w.id), { message: '毎週の課題のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV4;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV5;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -117,6 +132,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
   2: data => ({ ...data, schemaVersion: 3, assignments: [] }),
   // v3 → v4：毎週の課題を追加
   3: data => ({ ...data, schemaVersion: 4, weeklyAssignments: [] }),
+  // v4 → v5：自分で作る建物（目標に見た目を任意で追加。既存のデータは変えない）
+  4: data => ({ ...data, schemaVersion: 5 }),
 };
 
 export type ParseResult =

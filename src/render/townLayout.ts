@@ -1,13 +1,15 @@
 // 街の配置を決める純粋関数（描画とは分離してテストする）
 import { tierForLevel, type Stage, type Tier } from '../core/rules';
+import type { BuildingParts } from '../core/buildingLook';
 import type { BuildingKind, FacilityKind } from '../core/types';
+import { customSpriteName } from './customBuilding';
 
 export const TILE = 16;
 export const COLS = 16;
 const SLOT_X = [1, 4, 7, 10, 13]; // 2マス幅の建物を置く列（間は1マス）
 const BLOCK_ROWS = 4; // 建物3マス + 道1マス
 
-const PREFIX: Record<BuildingKind, string> = {
+const PREFIX: Record<Exclude<BuildingKind, 'custom'>, string> = {
   library: 'lib', bank: 'bank', news: 'news', gym: 'gym', school: 'school', plaza: 'plaza', kura: 'kura',
 };
 
@@ -19,6 +21,8 @@ export interface LayoutFacility {
 export interface LayoutGoal {
   goalId: string;
   kind: BuildingKind;
+  /** 自分で作った建物の部品 */
+  parts?: BuildingParts;
   level: number;
   faded: boolean;
 }
@@ -62,10 +66,11 @@ export function groundTier(stage: Stage): Tier {
   return 'village';
 }
 
-export function buildingSprite(kind: BuildingKind, level: number, has: (name: string) => boolean): string {
+export function buildingSprite(kind: BuildingKind, level: number, has: (name: string) => boolean, parts?: BuildingParts): string {
   // レベル0（倒壊）はがれき
   if (level <= 0 && has('rubble')) return 'rubble';
   const tier = tierForLevel(level);
+  if (kind === 'custom') return parts ? customSpriteName(parts, tier) : `house_${tier}`;
   const name = `${PREFIX[kind]}_${tier}`;
   return has(name) ? name : `house_${tier}`;
 }
@@ -106,7 +111,7 @@ export function layoutTown(goals: LayoutGoal[], stage: Stage, size: Size, facili
   const entries: Array<{ key: string; sprite: string; extra: Partial<PlacedItem> }> = [
     ...goals.map(g => ({
       key: `goal:${g.goalId}`,
-      sprite: buildingSprite(g.kind, g.level, has),
+      sprite: buildingSprite(g.kind, g.level, has, g.parts),
       // がれきは色あせ表示にしない（もう十分さびしいので）
       extra: { goalId: g.goalId, faded: g.faded && g.level > 0 },
     })),

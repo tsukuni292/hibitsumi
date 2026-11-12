@@ -1,5 +1,16 @@
 // スプライトを一度だけ小さなキャンバスに描いてキャッシュする（毎フレーム描き直さない）
-import { PALETTE, SPRITES } from './spriteData';
+import { customSpriteFromName } from './customBuilding';
+import { PALETTE, SPRITES, type SpriteDef } from './spriteData';
+
+const customDefs = new Map<string, SpriteDef | null>();
+
+/** 用意したスプライト、または自分で作った建物（名前から組み立てる） */
+function spriteDef(name: string): SpriteDef | undefined {
+  const fixed = SPRITES[name];
+  if (fixed) return fixed;
+  if (!customDefs.has(name)) customDefs.set(name, customSpriteFromName(name));
+  return customDefs.get(name) ?? undefined;
+}
 
 function hexToRgb(hex: string): [number, number, number] {
   return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -15,7 +26,7 @@ export interface SpriteVariant {
 const cache = new Map<string, HTMLCanvasElement>();
 
 export function getSprite(name: string, v: SpriteVariant = {}): HTMLCanvasElement | null {
-  const def = SPRITES[name];
+  const def = spriteDef(name);
   if (!def) return null;
   const key = `${name}|${v.faded ? 1 : 0}|${v.swapKey ?? ''}`;
   const hit = cache.get(key);
@@ -99,6 +110,6 @@ function applyFaded(img: ImageData, name: string): void {
 }
 
 export function spriteSize(name: string): { w: number; h: number } | null {
-  const def = SPRITES[name];
+  const def = spriteDef(name);
   return def ? { w: def.w, h: def.h } : null;
 }

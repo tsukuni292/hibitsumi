@@ -2,7 +2,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Action } from '../core/actions';
 import { addDays, diffDays, WEEKDAY_LABELS, type GameDate } from '../core/date';
-import { BUILDING_LABEL } from '../core/defaults';
+import { buildingName } from '../core/defaults';
 import { textOn } from '../core/goals';
 import {
   ASSIGNMENT_DAILY_CAP, ASSIGNMENT_EARLY_BONUS, ASSIGNMENT_EARLY_DAYS, ASSIGNMENT_ONTIME_COIN, ASSIGNMENT_OVERDUE_PENALTY,
@@ -62,7 +62,7 @@ export function AssignmentSection({ save, sim, today, goal, dispatch, newId }: P
         登録した当日の完了はコインの対象外なので、課題が出たら早めに登録しておきましょう。
         毎週出る課題は「毎週の課題」に登録しておくと、出る曜日に自動で追加されます。
       </p>
-      {imminent && <div className="danger-text">⚠ 倒壊寸前：今日が期限の課題を終えないと{BUILDING_LABEL[goal.building]}のレベルが下がります</div>}
+      {imminent && <div className="danger-text">⚠ 倒壊寸前：今日が期限の課題を終えないと{buildingName(goal)}のレベルが下がります</div>}
       <form className="todo-form" onSubmit={add}>
         <input value={title} onChange={e => setTitle(e.target.value)} maxLength={ASSIGNMENT_TITLE_MAX} placeholder="例：統計学 第3回レポート" aria-label="課題の内容" />
         <input type="date" value={due} min={today} onChange={e => setDue(e.target.value)} aria-label="期限" required />

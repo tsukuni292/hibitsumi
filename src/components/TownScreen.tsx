@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Action } from '../core/actions';
 import { toDayNumber, type GameDate } from '../core/date';
-import { BUILDING_LABEL } from '../core/defaults';
+import { buildingName } from '../core/defaults';
 import { isActive, textOn } from '../core/goals';
 import {
   FACILITIES, FACILITY_ORDER, MAX_LEVEL, MORALE_SPEND_FLOOR, moodForMorale, tierForLevel, upgradeCost, type Stage,
@@ -48,6 +48,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         activeGoals.map(g => ({
           goalId: g.id,
           kind: g.building,
+          parts: g.look,
           level: sim.buildings[g.id]?.level ?? 1,
           faded: isFadedNow(save, sim, g),
         })),
@@ -149,7 +150,7 @@ function BuildingPanel({ save, sim, today, goalId, dispatch, onClose }: {
   return (
     <section className="building-panel" ref={panelRef}>
       <div className="panel-head">
-        <h2>{BUILDING_LABEL[goal.building]}<span className="sub">（{text?.name ?? ''}）</span></h2>
+        <h2>{buildingName(goal)}<span className="sub">（{text?.name ?? ''}）</span></h2>
         <button type="button" className="btn icon" aria-label="閉じる" onClick={onClose}>×</button>
       </div>
       {rubble ? (

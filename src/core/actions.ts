@@ -1,5 +1,6 @@
 // ユーザーの操作。すべて「記録 + 操作 + 今日」→「新しい記録 or エラー」の純粋関数。
 // 不正な操作（2日以上前のチェック、休養日のチェックなど）はここで必ず弾く。
+import { normalizeLook, type BuildingLook } from './buildingLook';
 import { addDays, gameDateFromLocal, isGameDate, maxDate, weekStart, type GameDate } from './date';
 import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, textOn, upsertTimed } from './goals';
 import * as R from './rules';
@@ -14,8 +15,9 @@ export type Action =
   | { type: 'setDiary'; date: GameDate; text: string }
   | { type: 'declareRest' }
   | { type: 'cancelRest' }
-  | { type: 'addGoal'; id: string; goalType?: GoalType; building: BuildingKind; text: GoalText; frequency: Frequency }
-  | { type: 'editGoal'; goalId: string; building: BuildingKind; text: GoalText; frequency: Frequency }
+  /** building が custom のときは look（名前と部品）が必要 */
+  | { type: 'addGoal'; id: string; goalType?: GoalType; building: BuildingKind; look?: BuildingLook; text: GoalText; frequency: Frequency }
+  | { type: 'editGoal'; goalId: string; building: BuildingKind; look?: BuildingLook; text: GoalText; frequency: Frequency }
   | { type: 'archiveGoal'; goalId: string }
   | { type: 'upgrade'; goalId: string }
   | { type: 'buyFacility'; id: string; kind: FacilityKind }
@@ -81,6 +83,14 @@ export function validateFrequency(f: Frequency): Frequency | string {
   }
   if (!Number.isInteger(f.times) || f.times < 1 || f.times > 7) return '週の回数は1〜7回にしてください';
   return { kind: 'weekly', times: f.times };
+}
+
+/** 建物の種類と見た目。自分で作る建物は名前と部品を確かめる（それ以外の建物には見た目を持たせない） */
+function normalizeBuilding(building: BuildingKind, look: BuildingLook | undefined): Pick<Goal, 'building' | 'look'> | string {
+  if (building !== 'custom') return { building };
+  if (!look) return '建物の部品を選んでください';
+  const v = normalizeLook(look);
+  return typeof v === 'string' ? v : { building, look: v };
 }
 
 function sameFrequency(a: Frequency | null, b: Frequency): boolean {
@@ -228,10 +238,12 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       if (typeof text === 'string') return fail(text);
       const frequency = validateFrequency(goalType === 'diary' ? DIARY_FREQUENCY : action.frequency);
       if (typeof frequency === 'string') return fail(frequency);
+      const building = normalizeBuilding(action.building, action.look);
+      if (typeof building === 'string') return fail(building);
       const goal: Goal = {
         id: action.id,
         type: goalType,
-        building: action.building,
+        ...building,
         createdOn: today,
         archivedFrom: null,
         text: [{ from: today, value: text }],
@@ -247,12 +259,16 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       if (typeof text === 'string') return fail(text);
       const frequency = validateFrequency(goal.type === 'diary' ? DIARY_FREQUENCY : action.frequency);
       if (typeof frequency === 'string') return fail(frequency);
+      const nb = normalizeBuilding(action.building, action.look);
+      if (typeof nb === 'string') return fail(nb);
+      // 建物の見た目はすぐ反映（判定には関わらないため）。ほかの建物に戻したら見た目は消す
+      const { look: _old, ...rest } = goal;
+      const withBuilding: Goal = { ...rest, ...nb };
 
       // 今日作った目標は、作り直しと同じなので今日からすぐ反映
       if (goal.createdOn === today) {
         const updated: Goal = {
-          ...goal,
-          building: action.building,
+          ...withBuilding,
           text: [{ from: today, value: text }],
           frequency: [{ from: today, value: frequency }],
         };
@@ -263,7 +279,7 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       const tomorrow = addDays(today, 1);
       const nextMonday = addDays(weekStart(today), 7);
       const notes: string[] = [];
-      let updated: Goal = { ...goal, building: action.building };
+      let updated: Goal = withBuilding;
       if (!sameText(textOn(goal, tomorrow), text)) {
         updated = { ...updated, text: upsertTimed(updated.text, tomorrow, text) };
         notes.push(goal.type === 'diary' ? '名前・文字数の変更は明日から反映されます' : '名前・ラインの変更は明日から反映されます');

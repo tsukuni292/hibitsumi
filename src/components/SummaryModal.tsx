@@ -1,4 +1,4 @@
-import { BUILDING_LABEL } from '../core/defaults';
+import { buildingName } from '../core/defaults';
 import { textOn } from '../core/goals';
 import { ASSIGNMENT_OVERDUE_PENALTY, moodForMorale } from '../core/rules';
 import type { PeriodSummary } from '../core/simulate';
@@ -20,7 +20,7 @@ export function SummaryModal({ summary, save, imminent, onClose }: Props) {
   const nameOf = (id: string) => {
     const g = save.goals.find(x => x.id === id);
     if (!g) return '（不明）';
-    return `${BUILDING_LABEL[g.building]}（${textOn(g, summary.to)?.name ?? ''}）`;
+    return `${buildingName(g)}（${textOn(g, summary.to)?.name ?? ''}）`;
   };
   const single = summary.dayCount === 1;
   const last = summary.lastDay;

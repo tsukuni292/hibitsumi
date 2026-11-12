@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { acceptsAssignments, validCheckCount, type Action } from '../core/actions';
 import { addDays, dateRange, diffDays, weekStart, type GameDate } from '../core/date';
-import { BUILDING_LABEL } from '../core/defaults';
+import { buildingName } from '../core/defaults';
 import { describeFrequency, frequencyOn, hasMinimum, isActive, isCheckable, isWeeklyOn, textOn } from '../core/goals';
 import { COINS, REST_DAYS_PER_WEEK } from '../core/rules';
 import { checkOn, isCollapseImminent, type SimResult } from '../core/simulate';
@@ -166,7 +166,7 @@ function GoalRow({ save, sim, goal, date, dispatch }: { save: SaveData; sim: Sim
           </div>
         )}
         {imminent && (
-          <div className="danger-text">⚠ 倒壊寸前：{freq.kind === 'weekly' ? '今週1回もできないと' : '今日できないと'}{BUILDING_LABEL[goal.building]}のレベルが下がります</div>
+          <div className="danger-text">⚠ 倒壊寸前：{freq.kind === 'weekly' ? '今週1回もできないと' : '今日できないと'}{buildingName(goal)}のレベルが下がります</div>
         )}
       </div>
       {goal.type === 'diary' ? (

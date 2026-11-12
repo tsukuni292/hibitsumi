@@ -29,7 +29,7 @@ describe('形式チェック', () => {
     expect(parseSave({ ...s, goals: [...s.goals, s.goals[0]] })).toMatchObject({ ok: false, error: expect.stringContaining('重複') });
   });
 
-  it('v1 のデータを最新（v4）まで移行できる', () => {
+  it('v1 のデータを最新（v5）まで移行できる', () => {
     const v2 = fresh();
     const v1 = {
       ...v2,
@@ -41,7 +41,7 @@ describe('形式チェック', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.migratedFrom).toBe(1);
-    expect(r.save.schemaVersion).toBe(4);
+    expect(r.save.schemaVersion).toBe(5);
     expect(r.save.weeklyAssignments).toEqual([]);
     expect(r.save.assignments).toEqual([]);
     expect(r.save.goals.every(g => g.type === 'check')).toBe(true);
@@ -73,7 +73,7 @@ describe('形式チェック', () => {
     const st = createStore(DB_NAME, STORE_NAME);
     await set('save', JSON.parse(JSON.stringify({ ...v1, diary: undefined, todos: undefined, facilities: undefined })), st);
     const loaded = await loadSave();
-    expect(loaded?.schemaVersion).toBe(4);
+    expect(loaded?.schemaVersion).toBe(5);
     expect(loaded?.revision).toBe(6);
     expect((await get('backup:pre-migration-v1', st) as { schemaVersion: number }).schemaVersion).toBe(1);
   });

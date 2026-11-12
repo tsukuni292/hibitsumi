@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Action } from '../core/actions';
 import { addDays, type GameDate } from '../core/date';
-import { BUILDING_LABEL } from '../core/defaults';
+import { buildingName } from '../core/defaults';
 import { describeFrequency, frequencyOn, isActive, textOn } from '../core/goals';
 import { MAX_DAY_START_HOUR, MAX_GOALS } from '../core/rules';
 import type { Goal, SaveData } from '../core/types';
@@ -172,7 +172,7 @@ function GoalItem({ goal, today, onEdit, dispatch }: { goal: Goal; today: GameDa
   return (
     <li className="settings-goal">
       <div>
-        <div className="goal-name">{text.name}<span className="freq">{describeFrequency(freq)}・{BUILDING_LABEL[goal.building]}</span></div>
+        <div className="goal-name">{text.name}<span className="freq">{describeFrequency(freq)}・{buildingName(goal)}</span></div>
         <div className="goal-lines">
           <span>理想：{text.ideal}</span>
           {text.minimum && <span>最低：{text.minimum}</span>}

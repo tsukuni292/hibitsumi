@@ -10,7 +10,13 @@ export const BUILDING_LABEL: Record<BuildingKind, string> = {
   school: '学舎',
   plaza: '広場',
   kura: '蔵',
+  custom: '自分で作る',
 };
+
+/** 目標の建物の名前（自分で作った建物はその名前） */
+export function buildingName(goal: Pick<Goal, 'building' | 'look'>): string {
+  return goal.building === 'custom' ? goal.look?.name ?? '建物' : BUILDING_LABEL[goal.building];
+}
 
 interface Preset {
   type: GoalType;
