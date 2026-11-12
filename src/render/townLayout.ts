@@ -66,7 +66,12 @@ export interface TownLayout {
   items: PlacedItem[];
   lanes: Lane[];
   blocks: number;
+  /** 住民が歩けるマス（walk[y][x]）。もとからある横の道・左右の端の縦の道・自分で置いた道 */
+  walk: boolean[][];
 }
+
+/** 左右の端の縦の道を通す列 */
+export const EDGE_ROAD_COLS = [0, COLS - 1] as const;
 
 export { HOUSES_BY_STAGE } from '../core/rules';
 
@@ -167,16 +172,35 @@ export function layoutTown(
 
   const rows = 1 + blocks * BLOCK_ROWS + 1;
   const roadRows = Array.from({ length: blocks }, (_, b) => roadRowOf(b));
+
+  // 縦の道：となりの区画の道どうしを、左右の端でつなぐ（その列に建物があるとき・地形を置いたときは通さない）
+  const edgeRoad = new Set<string>();
+  for (let b = 0; b + 1 < blocks; b++) {
+    for (const x of EDGE_ROAD_COLS) {
+      if (used[b + 1]?.[x]) continue;
+      const cells = [];
+      for (let y = roadRowOf(b) + 1; y < roadRowOf(b + 1); y++) cells.push(y);
+      if (cells.some(y => terrain.has(cellKey(x, y)))) continue;
+      for (const y of cells) edgeRoad.add(cellKey(x, y));
+    }
+  }
+
   const tiles: string[][] = [];
+  const walk: boolean[][] = [];
   for (let y = 0; y < rows; y++) {
     const row: string[] = [];
+    const w: boolean[] = [];
     for (let x = 0; x < COLS; x++) {
       const isRoad = roadRows.includes(y);
+      const isEdge = edgeRoad.has(cellKey(x, y));
       // 置いた地形（もとからある道の上には置けない）
       const t = isRoad ? undefined : terrain.get(cellKey(x, y));
-      row.push(t ? terrainSprite(t, tier) : groundTile(tier, x, y, isRoad, y === 0 || y === rows - 1));
+      // 縦の道は、置いた道と同じ舗装（都市の白線は横向きなので使わない）
+      row.push(t ? terrainSprite(t, tier) : isEdge ? terrainSprite('road', tier) : groundTile(tier, x, y, isRoad, y === 0 || y === rows - 1));
+      w.push(isRoad || isEdge || t === 'road');
     }
     tiles.push(row);
+    walk.push(w);
   }
 
   const items: PlacedItem[] = [];
@@ -217,6 +241,7 @@ export function layoutTown(
     items,
     lanes: roadRows.map(r => ({ y: r * TILE, x0: 0, x1: COLS * TILE })),
     blocks,
+    walk,
   };
 }
 

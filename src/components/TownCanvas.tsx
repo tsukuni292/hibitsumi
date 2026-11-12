@@ -3,6 +3,9 @@ import { useEffect, useRef } from 'react';
 import { LAMP_LIGHTS, particles, seasonVariant, tint, WINDOW_LIGHTS, type Ambience } from '../render/ambience';
 import { getSprite } from '../render/spriteCache';
 import { residentLook, residentMood } from '../render/residents';
+import {
+  RESIDENT_H, RESIDENT_W, stepWalkers, syncWalkers, tapWalker, walkerMark, walkerPose, type MarkKind, type SpecialKind, type Walker,
+} from '../render/walkers';
 import { TILE, type TownLayout } from '../render/townLayout';
 
 interface Props {
@@ -14,8 +17,8 @@ interface Props {
   onSelect: (key: string | null) => void;
   /** 1アート画素あたりの CSS ピクセル数 */
   zoom: number;
-  /** 住民をタップしたとき（住民の番号） */
-  onResidentTap?: (index: number) => void;
+  /** 住民をタップしたとき（住民の番号と、起きたこと） */
+  onResidentTap?: (index: number, result: 'react' | SpecialKind) => void;
   /** 季節・時間帯・天気の見た目 */
   ambience: Ambience;
   /** 地形を置くモード：タップしたマス */
@@ -25,18 +28,24 @@ interface Props {
 }
 
 const TAP_SLOP = 6; // これ以上動いたらドラッグ扱い（CSS px）
-const RESIDENT = { w: 12, h: 16 };
 const RESIDENT_HIT_MARGIN = 3; // 小さくて動くので、当たり判定を少し広げる（アート画素）
-const TALK_MS = 4000;
 
-function pingPong(t: number, speed: number, offset: number, range: number): number {
-  if (range <= 0) return 0;
-  const p = (t * speed + offset) % (range * 2);
-  return p < range ? p : range * 2 - p;
-}
+/** 吹き出しの中の小さな絵（5×4）。# が色つき */
+const MARKS: Record<MarkKind, readonly string[]> = {
+  dots: ['.....', '#.#.#', '.....', '.....'],
+  note: ['..##.', '..#.#', '###..', '##...'],
+  bang: ['#.#..', '#.#..', '.....', '#.#..'],
+  ask: ['###..', '..#..', '.#...', '.#...'],
+  heart: ['##.##', '#####', '.###.', '..#..'],
+  zzz: ['####.', '..#..', '.#...', '####.'],
+  sweat: ['..#..', '.###.', '.###.', '..#..'],
+  tear: ['#...#', '#...#', '.....', '#...#'],
+  blush: ['..#.#', '.#.#.', '#.#..', '.....'],
+  sparkle: ['..#..', '.###.', '#####', '.#.#.'],
+};
 
-/** 頭の上の小さな吹き出し（白地に「…」）。cx は中心、bottom は下端（アート座標） */
-function drawSpeechMark(ctx: CanvasRenderingContext2D, cx: number, bottom: number) {
+/** 頭の上の小さな吹き出し。cx は中心、bottom は下端（アート座標） */
+function drawMark(ctx: CanvasRenderingContext2D, cx: number, bottom: number, kind: MarkKind, color: string) {
   const w = 9;
   const h = 6;
   const x = Math.round(cx - w / 2);
@@ -46,18 +55,11 @@ function drawSpeechMark(ctx: CanvasRenderingContext2D, cx: number, bottom: numbe
   ctx.fillRect(x + 3, y + h, 2, 2); // しっぽ
   ctx.fillStyle = '#fffaf0';
   ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-  ctx.fillStyle = '#3b2a2e';
-  for (const dx of [2, 4, 6]) ctx.fillRect(x + dx, y + 2, 1, 2);
+  ctx.fillStyle = color;
+  MARKS[kind].forEach((row, j) => [...row].forEach((c, i) => { if (c === '#') ctx.fillRect(x + 2 + i, y + 1 + j, 1, 1); }));
 }
 
-/** i 番目の住民の位置（描画とタップ判定で同じ計算を使う）。t は秒 */
-function residentPos(i: number, t: number, lay: TownLayout): { x: number; y: number } | null {
-  const lane = lay.lanes[i % lay.lanes.length];
-  if (!lane) return null;
-  const speed = 5 + ((i * 7) % 9);
-  const x = lane.x0 + pingPong(t, speed, i * 37, lane.x1 - lane.x0 - RESIDENT.w);
-  return { x: Math.round(x), y: lane.y };
-}
+
 
 export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap, onPlaceTap, onTileTap, ambience }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -75,8 +77,10 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
   onPlaceTapRef.current = onPlaceTap;
   const onTileTapRef = useRef(onTileTap);
   onTileTapRef.current = onTileTap;
-  /** 話している住民（吹き出しの印を出す） */
-  const talk = useRef<{ index: number; until: number } | null>(null);
+  /** 歩いている住民（道を1マスずつたどる。タップで立ち止まる） */
+  const walkers = useRef<Walker[]>([]);
+  const walkersFor = useRef<{ walk: boolean[][] | null; count: number }>({ walk: null, count: -1 });
+  const lastTs = useRef<number | null>(null);
 
   /**
    * 実際に描かれる倍率（CSS px / アート画素）。
@@ -178,17 +182,50 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
       }
 
       const t = ts / 1000;
-      const frame = Math.floor(t / 0.25) % 2;
-      const talking = talk.current && ts < talk.current.until ? talk.current.index : -1;
-      for (let i = 0; i < count; i++) {
-        const pos = residentPos(i, t, lay);
-        if (!pos) break;
+      // 住民の数・道が変わったら合わせ、時間を進める（タブが隠れていた間の大きな飛びは切り捨てる）
+      if (walkersFor.current.walk !== lay.walk || walkersFor.current.count !== count) {
+        walkers.current = syncWalkers(walkers.current, count, lay.walk);
+        walkersFor.current = { walk: lay.walk, count };
+      }
+      const dt = lastTs.current === null ? 0 : Math.min(0.1, (ts - lastTs.current) / 1000);
+      lastTs.current = ts;
+      stepWalkers(walkers.current, lay.walk, dt, ts);
+      // 下にいる住民ほど手前に描く
+      const poses = new Map(walkers.current.map(w => [w, walkerPose(w, ts)] as const));
+      const order = [...walkers.current].sort((a, b) => poses.get(a)!.y - poses.get(b)!.y);
+      for (const w of order) {
+        const i = w.index;
+        const pose = poses.get(w)!;
         const look = residentLook(i);
         const mood = residentMood(i, m);
+        // 動いているときは足を動かす（走るときは速く）
+        const fast = w.mode === 'special' && w.special !== null && pose.moving;
+        const frame = pose.moving ? Math.floor(t / (fast ? 0.12 : 0.25)) % 2 : 0;
         const sp = getSprite(`res_${mood}_${frame}`, { swap: look.swap, swapKey: look.key });
         if (!sp) continue;
-        ctx.drawImage(sp, pos.x, pos.y);
-        if (i === talking) drawSpeechMark(ctx, pos.x + RESIDENT.w / 2, pos.y - 2);
+        ctx.save();
+        if (pose.lie) {
+          // 寝転ぶ：地面の上に横向きに倒す（立っていた位置を中心に、幅16・高さ12に収まる）
+          if (pose.left) {
+            ctx.translate(pose.x + RESIDENT_W, pose.y + RESIDENT_H);
+            ctx.rotate(-Math.PI / 2);
+            ctx.drawImage(sp, 0, 2 - RESIDENT_H);
+          } else {
+            ctx.translate(pose.x, pose.y + RESIDENT_H);
+            ctx.rotate(Math.PI / 2);
+            ctx.drawImage(sp, -RESIDENT_W, 2 - RESIDENT_H);
+          }
+        } else if (pose.left) {
+          ctx.translate(pose.x + RESIDENT_W, pose.y);
+          ctx.scale(-1, 1);
+          ctx.drawImage(sp, 0, 0);
+        } else {
+          ctx.drawImage(sp, pose.x, pose.y);
+        }
+        ctx.restore();
+        const mark = walkerMark(w);
+        const markBottom = pose.lie ? pose.y + RESIDENT_H - RESIDENT_W - 2 : pose.y - 2;
+        if (mark) drawMark(ctx, pose.x + RESIDENT_W / 2, markBottom, mark.kind, mark.color);
       }
 
       // 時間帯の色をかぶせ、夕方・夜は窓と街灯に明かりをともす
@@ -282,12 +319,13 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
     if (onResidentTapRef.current) {
       const now = performance.now();
       const m = RESIDENT_HIT_MARGIN;
-      for (let i = live.current.residents - 1; i >= 0; i--) {
-        const pos = residentPos(i, now / 1000, live.current.layout);
-        if (!pos) continue;
-        if (ax >= pos.x - m && ax < pos.x + RESIDENT.w + m && ay >= pos.y - m && ay < pos.y + RESIDENT.h + m) {
-          talk.current = { index: i, until: now + TALK_MS };
-          onResidentTapRef.current(i);
+      // 手前（下）に描いた住民から調べる
+      const order = [...walkers.current].sort((a, b) => walkerPose(b, now).y - walkerPose(a, now).y);
+      for (const w of order) {
+        const pos = walkerPose(w, now);
+        if (ax >= pos.x - m && ax < pos.x + RESIDENT_W + m && ay >= pos.y - m && ay < pos.y + RESIDENT_H + m) {
+          const result = tapWalker(w, residentMood(w.index, live.current.morale), now);
+          onResidentTapRef.current(w.index, result);
           return;
         }
       }

@@ -21,6 +21,7 @@ import { addDays, diffDays } from '../core/date';
 import { timeOfDay, type Ambience } from '../render/ambience';
 import { currentTerrain, FARM_TAX_MAX, FARM_TILES_PER_TAX, isFarm, TERRAIN, TERRAIN_ORDER, type TerrainKind } from '../core/terrain';
 import { terrainSprite } from '../render/terrainSprites';
+import { PERSONALITY_LABEL, personalityOf, SPECIALS } from '../render/walkers';
 import { groundTier } from '../render/townLayout';
 
 interface Props {
@@ -43,6 +44,9 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
   const [shopOpen, setShopOpen] = useState(false);
   // 住民をタップした回数（タップのたびに次の名言）
   const [quoteCount, setQuoteCount] = useState<number | null>(null);
+  // 最後にタップした住民（性格を見せる）
+  const [tapped, setTapped] = useState<number | null>(null);
+  const [special, setSpecial] = useState<string | null>(null);
   // 配置を変えるモードと、動かそうとしている物
   const [arranging, setArranging] = useState(false);
   const [mover, setMover] = useState<string | null>(null);
@@ -109,7 +113,11 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
           }}
           zoom={zoom}
           ambience={ambience}
-          onResidentTap={() => setQuoteCount(c => (c === null ? 0 : c + 1))}
+          onResidentTap={(i, result) => {
+            setQuoteCount(c => (c === null ? 0 : c + 1));
+            setTapped(i);
+            setSpecial(result === 'react' ? null : SPECIALS[result].label);
+          }}
           onTileTap={painting ? (tx, ty) => { dispatch({ type: 'paintTerrain', x: tx, y: ty, kind: brush }); } : undefined}
           onPlaceTap={arranging ? (ax, ay, hitKey) => {
             const r = arrangeTap(layout, mover, ax, ay, hitKey);
@@ -129,6 +137,11 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
           <p className="quote-text">「{quote.text}」</p>
           <p className="quote-meaning">{quote.meaning}</p>
           <p className="quote-source">— {formatSource(quote)}</p>
+          {tapped !== null && (
+            <p className="hint">
+              {special ? <strong>{PERSONALITY_LABEL[personalityOf(tapped)]}な住民の「{special}」！</strong> : `（${PERSONALITY_LABEL[personalityOf(tapped)]}な住民。続けて何回もタップすると…？）`}
+            </p>
+          )}
           {quote.note && (
             <details className="quote-note">
               <summary>原文・補足</summary>
