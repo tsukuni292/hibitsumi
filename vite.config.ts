@@ -37,6 +37,8 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
+        // 通知の受け取り（public/push-sw.js）
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

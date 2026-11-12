@@ -10,14 +10,17 @@ import type { Game } from '../app/useGame';
 import { formatShort } from '../app/format';
 import { APP_VERSION, BUILD_TIME, reinstallLatest } from '../app/update';
 import { GoalForm, type GoalFormValue } from './GoalForm';
+import { NotifySection } from './NotifySection';
+import type { Notify } from '../app/useNotify';
 
 interface Props {
   game: Game;
   save: SaveData;
   today: GameDate;
+  notify: Notify;
 }
 
-export function SettingsScreen({ game, save, today }: Props) {
+export function SettingsScreen({ game, save, today, notify }: Props) {
   const { dispatch } = game;
   const [editing, setEditing] = useState<Goal | 'new' | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -106,6 +109,8 @@ export function SettingsScreen({ game, save, today }: Props) {
           </details>
         )}
       </section>
+
+      <NotifySection notify={notify} />
 
       <section className="card">
         <h2>1日の区切り</h2>

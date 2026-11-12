@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useGame } from './app/useGame';
+import { useNotify } from './app/useNotify';
 import { addDays } from './core/date';
 import { isActive } from './core/goals';
 import { stageForLevels } from './core/rules';
@@ -19,6 +20,7 @@ const TABS: Array<[Tab, string]> = [['today', '今日'], ['diary', '日記'], ['
 export function App() {
   const game = useGame();
   const { load, save, sim, today, dispatch, toasts } = game;
+  const notify = useNotify(save, today);
   const [tab, setTab] = useState<Tab>('today');
   const [moraleOpen, setMoraleOpen] = useState(false);
 
@@ -94,7 +96,7 @@ export function App() {
         {tab === 'today' && <TodayScreen save={save} sim={sim} today={today} dispatch={dispatch} newId={game.newId} onGoSettings={() => setTab('settings')} />}
         {tab === 'diary' && <DiaryScreen save={save} today={today} onEdit={() => setTab('today')} />}
         {tab === 'town' && <TownScreen save={save} sim={sim} today={today} stage={stage} dispatch={dispatch} newId={game.newId} />}
-        {tab === 'settings' && <SettingsScreen game={game} save={save} today={today} />}
+        {tab === 'settings' && <SettingsScreen game={game} save={save} today={today} notify={notify} />}
       </main>
       <nav className="tab-bar" aria-label="画面の切り替え">
         {TABS.map(([key, label]) => (

@@ -262,3 +262,8 @@ details summary { cursor: pointer; }
 .designer-preview figcaption { font-size: .75rem; font-weight: 700; }
 .designer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
 .designer-grid select { border: 2px solid var(--ink); border-radius: 8px; padding: 6px; background: #fff; min-height: 40px; }
+
+/* 通知 */
+.notify-settings { display: grid; gap: 8px; }
+.notify-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.notify-row input[type=time] { border: 2px solid var(--ink); border-radius: 8px; padding: 4px 6px; background: #fff; min-height: 36px; }
