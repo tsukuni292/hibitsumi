@@ -19,6 +19,9 @@ import { useViewPrefs } from '../app/viewPrefs';
 import { EVENT_EFFECT_DAYS, EVENT_FOR_SEASON, EVENTS, eventActiveOn, SEASON_LABEL, seasonKey, seasonOf, weatherOf, type EventKind } from '../core/seasons';
 import { addDays, diffDays } from '../core/date';
 import { timeOfDay, type Ambience } from '../render/ambience';
+import { currentTerrain, FARM_TILES_PER_TAX, isFarm, TERRAIN, TERRAIN_ORDER, type TerrainKind } from '../core/terrain';
+import { terrainSprite } from '../render/terrainSprites';
+import { groundTier } from '../render/townLayout';
 
 interface Props {
   save: SaveData;
@@ -45,6 +48,10 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
   const [mover, setMover] = useState<string | null>(null);
   const [arrangeMsg, setArrangeMsg] = useState<string | null>(null);
   const [eventOpen, setEventOpen] = useState(false);
+  // 地形を置くモードと、選んでいる地形（null は「消す」）
+  const [painting, setPainting] = useState(false);
+  const [brush, setBrush] = useState<TerrainKind | null>('road');
+  const terrain = useMemo(() => currentTerrain(save.terrainLog), [save.terrainLog]);
   const prefs = useViewPrefs();
   // 時刻は1分ごとに見直す（夜になったら夜の街に）
   const [hour, setHour] = useState(() => new Date().getHours() + new Date().getMinutes() / 60);
@@ -76,8 +83,9 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         spriteSize,
         facilities.map(f => ({ id: f.id, kind: f.kind })),
         save.placements,
+        terrain,
       ),
-    [activeGoals, sim, save, stage, facilities],
+    [activeGoals, sim, save, stage, facilities, terrain],
   );
 
   const mood = moodForMorale(sim.morale);
@@ -102,6 +110,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
           zoom={zoom}
           ambience={ambience}
           onResidentTap={() => setQuoteCount(c => (c === null ? 0 : c + 1))}
+          onTileTap={painting ? (tx, ty) => { dispatch({ type: 'paintTerrain', x: tx, y: ty, kind: brush }); } : undefined}
           onPlaceTap={arranging ? (ax, ay, hitKey) => {
             const r = arrangeTap(layout, mover, ax, ay, hitKey);
             setArrangeMsg(r.message);
@@ -132,9 +141,28 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <p className="speech">住民「{line}」<span className="hint">　住民をタップすると、名言を教えてくれます。</span></p>
       )}
 
-      <PopulationInfo sim={sim} />
+      <PopulationInfo sim={sim} farms={[...terrain.values()].filter(isFarm).length} />
 
-      {arranging ? (
+      {painting ? (
+        <div className="arrange-bar">
+          <p className="hint">置きたい地形を選んで、街のマスをタップしてください（もとからある道の上には置けません）。消すのは無料ですが、コインは戻りません。</p>
+          <div className="terrain-palette">
+            {TERRAIN_ORDER.map(k => (
+              <button key={k} type="button" className={`terrain-chip${brush === k ? ' on' : ''}`} onClick={() => setBrush(k)} aria-pressed={brush === k}>
+                <SpriteImg name={terrainSprite(k, groundTier(stage))} scale={2} />
+                <span>{TERRAIN[k].label}<br /><small>{TERRAIN[k].coins}コイン</small></span>
+              </button>
+            ))}
+            <button type="button" className={`terrain-chip${brush === null ? ' on' : ''}`} onClick={() => setBrush(null)} aria-pressed={brush === null}>
+              <span>消す<br /><small>無料</small></span>
+            </button>
+          </div>
+          <div className="btn-row">
+            <span className="hint">コイン {sim.coins}</span>
+            <button type="button" className="btn small primary" onClick={() => setPainting(false)}>完了</button>
+          </div>
+        </div>
+      ) : arranging ? (
         <div className="arrange-bar">
           <p className="hint">{arrangeMsg ?? '動かしたい物をタップしてから、置きたい場所をタップしてください。ほかの物をタップすると入れ替えます。'}</p>
           <div className="btn-row">
@@ -157,6 +185,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
       ) : (
       <div className="btn-row">
         <button type="button" className="btn" onClick={() => { setArranging(true); setSelected(null); setShopOpen(false); setEventOpen(false); }}>配置を変える</button>
+        <button type="button" className="btn" onClick={() => { setPainting(true); setSelected(null); setShopOpen(false); setEventOpen(false); }}>地形を置く</button>
         <button type="button" className={`btn${eventOpen ? ' primary' : ''}`} onClick={() => { setEventOpen(o => !o); setShopOpen(false); setSelected(null); }}>季節の行事</button>
         <button type="button" className={`btn${shopOpen ? ' primary' : ''}`} onClick={() => { setShopOpen(o => !o); setEventOpen(false); setSelected(null); }}>
           住民のための施設を建てる
@@ -173,7 +202,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <BuildingPanel save={save} sim={sim} today={today} goalId={selGoal.id} dispatch={dispatch} onClose={() => setSelected(null)} />
       )}
       {selFacility && <FacilityPanel facility={selFacility} today={today} onClose={() => setSelected(null)} />}
-      {!selGoal && !selFacility && !shopOpen && !arranging && (
+      {!selGoal && !selFacility && !shopOpen && !arranging && !painting && (
         <p className="hint center">建物をタップすると、くわしい情報と建て替えができます。ドラッグで街を動かせます。</p>
       )}
     </div>
@@ -227,7 +256,7 @@ function EventPanel({ sim, today, dispatch, newId }: { sim: SimResult; today: Ga
 }
 
 /** 人口と税収 */
-function PopulationInfo({ sim }: { sim: SimResult }) {
+function PopulationInfo({ sim, farms }: { sim: SimResult; farms: number }) {
   const p = sim.population;
   return (
     <details className="population">
@@ -243,6 +272,7 @@ function PopulationInfo({ sim }: { sim: SimResult }) {
         <li>続けたごほうび {p.activity}人（活動した日7日ごとに1人）</li>
         {p.away > 0 && <li>引っ越し中 −{p.away}人（しょんぼりで終わった日に1人出ていき、元気で終わった日に1人戻ります）</li>}
         <li>税収：目標や課題を1つでもやった日に、人口×0.5 コイン</li>
+        <li>田んぼ・畑 {farms}マス：{FARM_TILES_PER_TAX}マスごとに税収 +1（置いた翌日から。今は +{sim.farmTax}）</li>
       </ul>
     </details>
   );

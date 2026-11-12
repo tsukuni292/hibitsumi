@@ -1,8 +1,9 @@
 import type { BuildingLook } from './buildingLook';
 import type { GameDate } from './date';
 import type { EventKind } from './seasons';
+import type { TerrainEntry } from './terrain';
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -133,6 +134,8 @@ export interface SaveData {
   /** この日から税収と引っ越しを数える（機能を入れた日。過去の分をまとめて受け取らないように） */
   taxFrom: GameDate;
   events: SeasonEvent[];
+  /** 地形を置いた・消した記録（実行順）。費用と田畑の税収を日ごとに計算するため、地図ではなく記録で持つ */
+  terrainLog: TerrainEntry[];
   restDays: GameDate[];
   /** 実行した順に並ぶ */
   upgrades: Upgrade[];

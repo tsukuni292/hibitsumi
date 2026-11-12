@@ -278,3 +278,9 @@ details summary { cursor: pointer; }
 
 /* 季節の行事 */
 .event-banner { margin: 0; padding: 6px 10px; border-radius: 10px; background: #fde7c4; border: 2px solid var(--ink); font-weight: 700; font-size: .9rem; }
+
+/* 地形を置く */
+.terrain-palette { display: flex; flex-wrap: wrap; gap: 6px; }
+.terrain-chip { display: flex; align-items: center; gap: 4px; border: 2px solid var(--ink); border-radius: 8px; background: #fff; padding: 4px 6px; font: inherit; font-size: .8rem; line-height: 1.2; text-align: left; min-height: 44px; }
+.terrain-chip.on { background: #f2cf6b; }
+.terrain-chip small { font-size: .7rem; }

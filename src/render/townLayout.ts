@@ -3,6 +3,8 @@ import { HOUSES_BY_STAGE, tierForLevel, type Stage, type Tier } from '../core/ru
 import type { BuildingParts } from '../core/buildingLook';
 import type { BuildingKind, FacilityKind, Placement } from '../core/types';
 import { customSpriteName } from './customBuilding';
+import { cellKey, type TerrainKind } from '../core/terrain';
+import { terrainSprite } from './terrainSprites';
 
 export const TILE = 16;
 export const COLS = 16;
@@ -106,6 +108,7 @@ export function layoutTown(
   size: Size,
   facilities: LayoutFacility[] = [],
   placements: Readonly<Record<string, Placement>> = {},
+  terrain: ReadonlyMap<string, TerrainKind> = new Map(),
 ): TownLayout {
   const has = (n: string) => size(n) !== null;
   const tier = groundTier(stage);
@@ -167,7 +170,12 @@ export function layoutTown(
   const tiles: string[][] = [];
   for (let y = 0; y < rows; y++) {
     const row: string[] = [];
-    for (let x = 0; x < COLS; x++) row.push(groundTile(tier, x, y, roadRows.includes(y), y === 0 || y === rows - 1));
+    for (let x = 0; x < COLS; x++) {
+      const isRoad = roadRows.includes(y);
+      // 置いた地形（もとからある道の上には置けない）
+      const t = isRoad ? undefined : terrain.get(cellKey(x, y));
+      row.push(t ? terrainSprite(t, tier) : groundTile(tier, x, y, isRoad, y === 0 || y === rows - 1));
+    }
     tiles.push(row);
   }
 

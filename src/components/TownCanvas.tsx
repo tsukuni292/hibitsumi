@@ -18,6 +18,8 @@ interface Props {
   onResidentTap?: (index: number) => void;
   /** 季節・時間帯・天気の見た目 */
   ambience: Ambience;
+  /** 地形を置くモード：タップしたマス */
+  onTileTap?: (tx: number, ty: number) => void;
   /** 配置を変えるモード：タップした地点（アート座標）と、そこにある動かせる物のキー */
   onPlaceTap?: (ax: number, ay: number, hitKey: string | null) => void;
 }
@@ -57,7 +59,7 @@ function residentPos(i: number, t: number, lay: TownLayout): { x: number; y: num
   return { x: Math.round(x), y: lane.y };
 }
 
-export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap, onPlaceTap, ambience }: Props) {
+export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap, onPlaceTap, onTileTap, ambience }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 描画ループから最新の props を読むための参照
@@ -71,6 +73,8 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
   onResidentTapRef.current = onResidentTap;
   const onPlaceTapRef = useRef(onPlaceTap);
   onPlaceTapRef.current = onPlaceTap;
+  const onTileTapRef = useRef(onTileTap);
+  onTileTapRef.current = onTileTap;
   /** 話している住民（吹き出しの印を出す） */
   const talk = useRef<{ index: number; until: number } | null>(null);
 
@@ -257,6 +261,13 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
     const z = effZoom();
     const ax = cam.current.x + (e.clientX - rect.left) / z;
     const ay = cam.current.y + (e.clientY - rect.top) / z;
+
+    // 地形を置くモードでは、タップしたマスだけを見る
+    if (onTileTapRef.current) {
+      const lay = live.current.layout;
+      if (ax >= 0 && ay >= 0 && ax < lay.width && ay < lay.height) onTileTapRef.current(Math.floor(ax / TILE), Math.floor(ay / TILE));
+      return;
+    }
 
     // 配置を変えるモードでは、住民は無視して建物・施設・民家だけを見る
     if (onPlaceTapRef.current) {

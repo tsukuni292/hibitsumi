@@ -4,6 +4,7 @@ import { addDays, dateRange, diffDays, isSunday, weekStart, type GameDate } from
 import { frequencyOn, idealCharsOn, isActive, isAssignmentGoalOn, isCheckable, isScheduledDaily, isWeeklyOn } from './goals';
 import * as R from './rules';
 import { EVENTS, eventActiveOn, seasonOf as seasonOfDate, HANAMI_MORALE, MATSURI_TAX_FACTOR, MOCHITSUKI_MORALE, seasonKey, SHUKAKU_IDEAL_BONUS } from './seasons';
+import { applyTerrain, FARM_TILES_PER_TAX, isFarm, isValidCell, TERRAIN, type TerrainKind } from './terrain';
 import type { Assignment, CheckLevel, FacilityKind, FacilityPurchase, Goal, SaveData, SeasonEvent } from './types';
 
 export type DayKind =
@@ -106,6 +107,8 @@ export interface SimResult {
   activeToday: boolean;
   /** 開いた季節の行事（有効なものだけ） */
   events: SeasonEvent[];
+  /** 田んぼ・畑による税収の上乗せ（昨日までに置いた分） */
+  farmTax: number;
 }
 
 export interface Population {
@@ -192,6 +195,14 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     });
   const eventsOn = groupBy(validEvents, e => e.date);
   const effectOn = (kind: 'matsuri' | 'shukaku', date: GameDate) => validEvents.some(e => e.kind === kind && eventActiveOn(e.date, date));
+
+  // 地形：開始日〜今日の記録だけ（置ける場所でないものは無視）。田畑の税収は置いた翌日から
+  const terrainByDate = groupBy(
+    save.terrainLog.filter(e => e.date >= save.startDate && e.date <= today && isValidCell(e.x, e.y) && (e.kind === null || TERRAIN[e.kind] !== undefined)),
+    e => e.date,
+  );
+  const terrain = new Map<string, TerrainKind>();
+  const farmTax = () => Math.floor([...terrain.values()].filter(isFarm).length / FARM_TILES_PER_TAX);
 
   const todosDone = groupBy(save.todos.filter(t => t.doneOn !== null), t => t.doneOn as GameDate);
   // 担当の目標が消えた課題（壊れたデータ）は数えない
@@ -293,6 +304,8 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       spentCoins += def.coins;
       spentMorale += def.morale;
     }
+    // 地形：置いたマスの費用（消すのは無料）
+    for (const e of terrainByDate.get(date) ?? []) if (e.kind !== null) spentCoins += TERRAIN[e.kind].coins;
     // 季節の行事：費用と、その場で効く分（お花見・餅つきのやる気）
     let gainedMorale = 0;
     for (const e of eventsOn.get(date) ?? []) {
@@ -453,10 +466,12 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       if ((eventsOn.get(date) ?? []).some(e => e.kind === 'mochitsuki')) away = 0;
       movedOut = populationOf(gross, away).away - prev;
       away = populationOf(gross, away).away;
-      if (anyCheck) tax = taxFor(populationOf(gross, away).total) * (effectOn('matsuri', date) ? MATSURI_TAX_FACTOR : 1);
+      if (anyCheck) tax = (taxFor(populationOf(gross, away).total) + farmTax()) * (effectOn('matsuri', date) ? MATSURI_TAX_FACTOR : 1);
       coins += tax;
     }
     const population = populationOf(gross, away).total;
+    // その日に置いた地形は、翌日から田畑の税収に数える
+    for (const e of terrainByDate.get(date) ?? []) applyTerrain(terrain, e);
 
     const fadedAfter = fadedSet(date);
     days.push({
@@ -535,7 +550,8 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     // 休養日は連続記録を増やさない（確定時と同じ規則）
     streak: streak + (anyToday && !rest.has(today) ? 1 : 0),
     population,
-    taxToday: today >= save.taxFrom ? taxFor(population.total) * (effectOn('matsuri', today) ? MATSURI_TAX_FACTOR : 1) : 0,
+    taxToday: today >= save.taxFrom ? (taxFor(population.total) + farmTax()) * (effectOn('matsuri', today) ? MATSURI_TAX_FACTOR : 1) : 0,
+    farmTax: farmTax(),
     events: validEvents,
     activeToday,
   };

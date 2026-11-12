@@ -2,6 +2,7 @@
 // 不正な操作（2日以上前のチェック、休養日のチェックなど）はここで必ず弾く。
 import { normalizeLook, type BuildingLook } from './buildingLook';
 import { EVENTS, seasonKey, seasonOf, type EventKind } from './seasons';
+import { cellKey, currentTerrain, isValidCell, TERRAIN, TERRAIN_MAX_LOG, type TerrainKind } from './terrain';
 import { addDays, gameDateFromLocal, isGameDate, maxDate, weekStart, type GameDate } from './date';
 import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, textOn, upsertTimed } from './goals';
 import * as R from './rules';
@@ -41,6 +42,8 @@ export type Action =
   | { type: 'resetPlacements' }
   /** 今の季節の行事を開く（季節ごとに1回） */
   | { type: 'holdEvent'; id: string; kind: EventKind }
+  /** 1マスに地形を置く（kind が null なら消す） */
+  | { type: 'paintTerrain'; x: number; y: number; kind: TerrainKind | null }
   | { type: 'setDayStartHour'; hour: number }
   | { type: 'markSummarySeen'; upTo: GameDate }
   | { type: 'markBackup' }
@@ -357,6 +360,20 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
         save: { ...save, facilities: [...save.facilities, { id: action.id, kind: action.kind, date: today }] },
         note: `${def.label}を建てました！効果は明日から`,
       };
+    }
+
+    case 'paintTerrain': {
+      if (!isValidCell(action.x, action.y)) return fail('そこには置けません');
+      if (action.kind !== null && !TERRAIN[action.kind]) return fail('その地形はありません');
+      const now = currentTerrain(save.terrainLog).get(cellKey(action.x, action.y)) ?? null;
+      if (now === action.kind) return fail(action.kind === null ? 'そこには何も置いていません' : `もう${TERRAIN[action.kind].label}です`);
+      if (save.terrainLog.length >= TERRAIN_MAX_LOG) return fail('地形の記録がいっぱいです');
+      if (action.kind !== null) {
+        const cost = TERRAIN[action.kind].coins;
+        const sim = simulate(save, today);
+        if (sim.coins < cost) return fail(`コインが足りません（あと${cost - sim.coins}枚）`);
+      }
+      return { ok: true, save: { ...save, terrainLog: [...save.terrainLog, { date: today, x: action.x, y: action.y, kind: action.kind }] } };
     }
 
     case 'holdEvent': {

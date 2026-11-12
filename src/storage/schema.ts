@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { isGameDate } from '../core/date';
 import { MINI_KINDS, PART_OPTIONS } from '../core/buildingLook';
+import { TERRAIN_COLS, TERRAIN_MAX_LOG, TERRAIN_MAX_ROWS } from '../core/terrain';
 import { BUILDING_NAME_MAX, DIARY_MAX_IDEAL_CHARS, PLACE_MAX_BLOCKS, PLACE_MAX_COL } from '../core/rules';
 import { SCHEMA_VERSION, type SaveData } from '../core/types';
 
@@ -89,9 +90,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV8 = z
+const saveSchemaV9 = z
   .object({
-    schemaVersion: z.literal(8),
+    schemaVersion: z.literal(9),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -103,6 +104,12 @@ const saveSchemaV8 = z
     weeklyAssignments: z.array(weeklyAssignment),
     facilities: z.array(facility),
     taxFrom: gameDate,
+    terrainLog: z.array(z.object({
+      date: gameDate,
+      x: z.number().int().min(0).max(TERRAIN_COLS - 1),
+      y: z.number().int().min(0).max(TERRAIN_MAX_ROWS - 1),
+      kind: z.enum(['road', 'paddy', 'field', 'water', 'flowerbed', 'garden', 'forest']).nullable(),
+    })).max(TERRAIN_MAX_LOG),
     events: z.array(z.object({ id: z.string().min(1), kind: z.enum(['hanami', 'matsuri', 'shukaku', 'mochitsuki']), date: gameDate })),
     placements: z.record(z.string().regex(/^(goal|fac|house):.+$/), placement),
     restDays: z.array(gameDate),
@@ -119,7 +126,7 @@ const saveSchemaV8 = z
   .refine(s => unique(s.events, e => e.id), { message: '行事のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV8;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV9;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -149,6 +156,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
   6: data => ({ ...data, schemaVersion: 7, taxFrom: data.lastSeenDate }),
   // v7 → v8：季節の行事
   7: data => ({ ...data, schemaVersion: 8, events: [] }),
+  // v8 → v9：地形を置く
+  8: data => ({ ...data, schemaVersion: 9, terrainLog: [] }),
 };
 
 export type ParseResult =

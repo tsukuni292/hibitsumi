@@ -31,7 +31,7 @@ const TREE: Partial<Record<Season, Record<string, string>>> = {
 
 /** 地面・木のスプライトの季節の色。それ以外は null */
 export function seasonVariant(sprite: string, season: Season): SpriteVariant | null {
-  const swap = sprite === 'deco_tree' ? TREE[season] : sprite.startsWith('tile_grass') || sprite.startsWith('tile_flowers') ? GROUND[season] : undefined;
+  const swap = sprite === 'deco_tree' || sprite === 'tile_t_forest' ? TREE[season] : sprite.startsWith('tile_grass') || sprite.startsWith('tile_flowers') ? GROUND[season] : undefined;
   return swap ? { swap, swapKey: `season-${season}` } : null;
 }
 

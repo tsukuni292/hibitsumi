@@ -1,12 +1,13 @@
 // スプライトを一度だけ小さなキャンバスに描いてキャッシュする（毎フレーム描き直さない）
 import { customSpriteFromName } from './customBuilding';
 import { PALETTE, SPRITES, type SpriteDef } from './spriteData';
+import { TERRAIN_SPRITES } from './terrainSprites';
 
 const customDefs = new Map<string, SpriteDef | null>();
 
 /** 用意したスプライト、または自分で作った建物（名前から組み立てる） */
 function spriteDef(name: string): SpriteDef | undefined {
-  const fixed = SPRITES[name];
+  const fixed = SPRITES[name] ?? TERRAIN_SPRITES[name];
   if (fixed) return fixed;
   if (!customDefs.has(name)) customDefs.set(name, customSpriteFromName(name));
   return customDefs.get(name) ?? undefined;
