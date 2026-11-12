@@ -44,6 +44,11 @@ export interface DayResult {
   collapsed: string[];
   /** 神社のお守りで倒壊を防いだ建物 */
   protected: string[];
+  /** その日の終わりの人口と、税収（活動した日だけ） */
+  population: number;
+  tax: number;
+  /** その日に引っ越していった（+）・戻ってきた（-）住民 */
+  movedOut: number;
 }
 
 /** none＝神社なし、tomorrow＝建てたばかりで明日から、ready＝使える、recharging＝使ったあとの休み中 */
@@ -92,6 +97,26 @@ export interface SimResult {
   days: DayResult[];
   /** 連続でチェックした日数（今日チェック済みなら今日も含む） */
   streak: number;
+  /** 今の人口と内訳 */
+  population: Population;
+  /** 今日活動すると、明日の朝に入る税収 */
+  taxToday: number;
+  /** 今日すでに活動したか（税収の対象か） */
+  activeToday: boolean;
+}
+
+export interface Population {
+  total: number;
+  /** 最初からいる住民＋民家の住民 */
+  houses: number;
+  /** 施設に集まる住民 */
+  facilities: number;
+  /** 建物のレベルの合計 */
+  buildings: number;
+  /** 活動した日の積み重ね */
+  activity: number;
+  /** やる気が低くて引っ越していった住民 */
+  away: number;
 }
 
 /** その日の達成度。日記の目標は本文の文字数から決まる */
@@ -176,6 +201,8 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   let coins = 0;
   let absentPenalties = 0;
   let streak = 0;
+  let activeDays = 0;
+  let away = 0;
   /** お守りが使えるようになる日（null は「神社があればいつでも」） */
   let charmReadyOn: GameDate | null = null;
   const facilities = emptyFacilities();
@@ -251,6 +278,26 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     morale = Math.max(R.MORALE_MIN, R.round2(morale - spentMorale));
     return { coins: spentCoins, morale: spentMorale };
   };
+
+  /**
+   * その日の人口（引っ越しを除く前）。建物のレベル・民家（発展段階）・施設（建てた翌日から）・活動した日の積み重ね
+   */
+  const grossPopulation = (date: GameDate): Omit<Population, 'total' | 'away'> => {
+    const levels = goals.filter(g => isActive(g, date)).map(g => b(g.id).level);
+    const houses = R.HOUSES_BY_STAGE[R.stageForLevels(levels)];
+    return {
+      houses: R.RESIDENT_BASE + houses * R.RESIDENTS_PER_HOUSE,
+      facilities: validPurchases.filter(f => f.date < date).length,
+      buildings: levels.reduce((a, l) => a + l, 0),
+      activity: Math.min(R.ACTIVE_DAYS_RESIDENTS_MAX, Math.floor(activeDays / R.ACTIVE_DAYS_PER_RESIDENT)),
+    };
+  };
+  const populationOf = (g: Omit<Population, 'total' | 'away'>, awayNow: number): Population => {
+    const gross = g.houses + g.facilities + g.buildings + g.activity;
+    const a = Math.min(awayNow, Math.max(0, gross - R.MIN_POPULATION));
+    return { ...g, away: a, total: gross - a };
+  };
+  const taxFor = (pop: number) => Math.floor(pop * R.TAX_PER_RESIDENT);
 
   const fadedSet = (date: GameDate): Set<string> =>
     new Set(goals.filter(g => isActive(g, date) && b(g.id).misses >= R.FADE_AFTER_MISSES).map(g => g.id));
@@ -364,6 +411,25 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       else if (kind !== 'none') streak = 0;
     }
 
+    // 6. 人口と税収（機能を入れた日から）。しょんぼりで終わった日は1人引っ越し、元気で終わった日は1人戻る。
+    //    税収は活動した日だけ、その日の終わりの人口に応じて
+    if (anyCheck) activeDays += 1;
+    let movedOut = 0;
+    let tax = 0;
+    const gross = grossPopulation(date);
+    if (date >= save.taxFrom) {
+      const mood = R.moodForMorale(morale);
+      const prev = populationOf(gross, away).away;
+      if (mood === 'sad') away = prev + 1;
+      else if (mood === 'happy') away = Math.max(0, prev - 1);
+      else away = prev;
+      movedOut = populationOf(gross, away).away - prev;
+      away = populationOf(gross, away).away;
+      if (anyCheck) tax = taxFor(populationOf(gross, away).total);
+      coins += tax;
+    }
+    const population = populationOf(gross, away).total;
+
     const fadedAfter = fadedSet(date);
     days.push({
       date,
@@ -382,6 +448,9 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       recovered: [...fadedBefore].filter(id => !fadedAfter.has(id)),
       collapsed,
       protected: prot,
+      population,
+      tax,
+      movedOut,
     });
   }
 
@@ -408,6 +477,11 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     applySpending(today);
   }
 
+  // 今日の人口：今日の建設まで反映。活動した日の積み重ねは、今日活動していれば今日の分も数える
+  const activeToday = anyToday;
+  if (activeToday) activeDays += 1;
+  const population = populationOf(grossPopulation(today), today >= save.taxFrom ? away : 0);
+
   // charmReadyOn はクロージャ内で書き換わるので、型の絞り込みを外して読む
   const readyOn = charmReadyOn as GameDate | null;
   // 今日の分は明日の確定時に effective('shrine', today) で判定されるので、表示も同じ条件にする
@@ -431,6 +505,9 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     days,
     // 休養日は連続記録を増やさない（確定時と同じ規則）
     streak: streak + (anyToday && !rest.has(today) ? 1 : 0),
+    population,
+    taxToday: today >= save.taxFrom ? taxFor(population.total) : 0,
+    activeToday,
   };
 }
 
@@ -481,6 +558,10 @@ export interface PeriodSummary {
   moraleBefore: number;
   moraleAfter: number;
   coinsEarned: number;
+  /** 期間中の税収の合計（coinsEarned とは別） */
+  tax: number;
+  /** 期間中に引っ越していった（+）・戻ってきた（-）住民の合計 */
+  movedOut: number;
   newlyFaded: string[];
   recovered: string[];
   collapsed: string[];
@@ -513,6 +594,8 @@ export function summarizeSince(sim: SimResult, after: GameDate | null): PeriodSu
     moraleBefore: first.moraleBefore,
     moraleAfter: last.moraleAfter,
     coinsEarned: list.reduce((a, d) => a + d.coinsEarned, 0),
+    tax: list.reduce((a, d) => a + d.tax, 0),
+    movedOut: list.reduce((a, d) => a + d.movedOut, 0),
     newlyFaded: faded,
     recovered,
     collapsed: unique(list.flatMap(d => d.collapsed)),

@@ -40,6 +40,18 @@ export function SummaryModal({ summary, save, imminent, onClose }: Props) {
           <dd>{Math.round(summary.moraleBefore)} → <strong>{Math.round(summary.moraleAfter)}</strong>（{signed(diff)}）</dd>
           <dt>獲得コイン</dt>
           <dd>{summary.coinsEarned}</dd>
+          {summary.tax > 0 && (
+            <>
+              <dt>税収</dt>
+              <dd>+{summary.tax}（人口 {last.population}人）</dd>
+            </>
+          )}
+          {summary.movedOut !== 0 && (
+            <>
+              <dt>住民</dt>
+              <dd>{summary.movedOut > 0 ? `${summary.movedOut}人が引っ越していきました（やる気が上がると戻ってきます）` : `${-summary.movedOut}人が戻ってきました！`}</dd>
+            </>
+          )}
           {single && last.kind === 'normal' && last.score !== null && (
             <>
               <dt>達成度</dt>

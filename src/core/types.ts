@@ -1,7 +1,7 @@
 import type { BuildingLook } from './buildingLook';
 import type { GameDate } from './date';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -122,6 +122,8 @@ export interface SaveData {
   facilities: FacilityPurchase[];
   /** 自分で動かした物の位置。キーは goal:ID・fac:ID・house:番号。ないものは自動で並べる */
   placements: Record<string, Placement>;
+  /** この日から税収と引っ越しを数える（機能を入れた日。過去の分をまとめて受け取らないように） */
+  taxFrom: GameDate;
   restDays: GameDate[];
   /** 実行した順に並ぶ */
   upgrades: Upgrade[];

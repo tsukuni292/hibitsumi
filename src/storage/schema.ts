@@ -89,9 +89,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV6 = z
+const saveSchemaV7 = z
   .object({
-    schemaVersion: z.literal(6),
+    schemaVersion: z.literal(7),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -102,6 +102,7 @@ const saveSchemaV6 = z
     assignments: z.array(assignment),
     weeklyAssignments: z.array(weeklyAssignment),
     facilities: z.array(facility),
+    taxFrom: gameDate,
     placements: z.record(z.string().regex(/^(goal|fac|house):.+$/), placement),
     restDays: z.array(gameDate),
     upgrades: z.array(z.object({ date: gameDate, goalId: z.string().min(1) })),
@@ -116,7 +117,7 @@ const saveSchemaV6 = z
   .refine(s => unique(s.weeklyAssignments, w => w.id), { message: '毎週の課題のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV6;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV7;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -142,6 +143,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
   4: data => ({ ...data, schemaVersion: 5 }),
   // v5 → v6：自由配置（空＝今までどおり自動で並べる）
   5: data => ({ ...data, schemaVersion: 6, placements: {} }),
+  // v6 → v7：人口と税収。過去の分の税収をまとめて受け取らないよう、最後に開いた日から数える
+  6: data => ({ ...data, schemaVersion: 7, taxFrom: data.lastSeenDate }),
 };
 
 export type ParseResult =

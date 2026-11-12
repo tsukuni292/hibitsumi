@@ -179,6 +179,22 @@ export const STAGE_LABEL: Record<Stage, string> = {
 };
 
 /** 発展段階は「有効な建物の平均レベル」で決める（目標の数に左右されない） */
+// ---- 人口と税収 ----
+/** 発展段階ごとの民家の数 */
+export const HOUSES_BY_STAGE: Record<Stage, number> = { hamlet: 1, village: 2, town: 3, city: 4 };
+/** 最初からいる住民と、民家1軒あたりの住民 */
+export const RESIDENT_BASE = 2;
+export const RESIDENTS_PER_HOUSE = 2;
+/** 活動した日がこの日数たまるごとに住民+1（上限あり） */
+export const ACTIVE_DAYS_PER_RESIDENT = 7;
+export const ACTIVE_DAYS_RESIDENTS_MAX = 20;
+/** 引っ越しても残る最低の人数 */
+export const MIN_POPULATION = 2;
+/** 活動した日の税収：住民1人あたり（切り捨て） */
+export const TAX_PER_RESIDENT = 0.5;
+/** 街を歩いて見える住民の上限（多すぎると描画が重い） */
+export const MAX_WALKING_RESIDENTS = 40;
+
 export function stageForLevels(levels: number[]): Stage {
   if (levels.length === 0) return 'hamlet';
   const avg = levels.reduce((a, b) => a + b, 0) / levels.length;

@@ -1,5 +1,5 @@
 // 街の配置を決める純粋関数（描画とは分離してテストする）
-import { tierForLevel, type Stage, type Tier } from '../core/rules';
+import { HOUSES_BY_STAGE, tierForLevel, type Stage, type Tier } from '../core/rules';
 import type { BuildingParts } from '../core/buildingLook';
 import type { BuildingKind, FacilityKind, Placement } from '../core/types';
 import { customSpriteName } from './customBuilding';
@@ -66,7 +66,7 @@ export interface TownLayout {
   blocks: number;
 }
 
-export const HOUSES_BY_STAGE: Record<Stage, number> = { hamlet: 1, village: 2, town: 3, city: 4 };
+export { HOUSES_BY_STAGE } from '../core/rules';
 
 export function groundTier(stage: Stage): Tier {
   if (stage === 'city') return 'city';

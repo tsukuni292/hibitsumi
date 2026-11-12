@@ -270,3 +270,8 @@ details summary { cursor: pointer; }
 
 /* 配置を変える */
 .arrange-bar { display: grid; gap: 6px; border: 2px dashed var(--ink); border-radius: 10px; padding: 8px 10px; background: #fff8e6; }
+
+/* 人口と税収 */
+.population { border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; background: #fffaf0; }
+.population summary { cursor: pointer; }
+.population ul { margin: 6px 0 0; padding-left: 1.2em; }

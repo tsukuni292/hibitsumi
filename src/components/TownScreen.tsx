@@ -4,15 +4,15 @@ import { toDayNumber, type GameDate } from '../core/date';
 import { buildingName } from '../core/defaults';
 import { isActive, textOn } from '../core/goals';
 import {
-  FACILITIES, FACILITY_ORDER, MAX_LEVEL, MORALE_SPEND_FLOOR, moodForMorale, tierForLevel, upgradeCost, type Stage,
+  FACILITIES, FACILITY_ORDER, MAX_LEVEL, MAX_WALKING_RESIDENTS, MORALE_SPEND_FLOOR, moodForMorale, tierForLevel, upgradeCost, type Stage,
 } from '../core/rules';
 import { inRangeFacilities, isCollapseImminent, isFadedNow, type SimResult } from '../core/simulate';
 import type { FacilityKind, FacilityPurchase, SaveData } from '../core/types';
 import { formatShort } from '../app/format';
 import { formatSource, quoteFor } from '../core/quotes';
-import { residentCount, residentLine } from '../render/residents';
+import { residentLine } from '../render/residents';
 import { spriteSize } from '../render/spriteCache';
-import { HOUSES_BY_STAGE, layoutTown, placementAt, SPAN, type Placement, type TownLayout } from '../render/townLayout';
+import { layoutTown, placementAt, SPAN, type Placement, type TownLayout } from '../render/townLayout';
 import { SpriteImg } from './SpriteImg';
 import { TownCanvas } from './TownCanvas';
 
@@ -44,8 +44,6 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
 
   const activeGoals = useMemo(() => save.goals.filter(g => isActive(g, today)), [save.goals, today]);
   const facilities = useMemo(() => inRangeFacilities(save, today), [save, today]);
-  // 住民が増えるのも効果の一つなので、建てた翌日から
-  const facilityResidents = facilities.filter(f => f.date < today).length;
   const layout = useMemo(
     () =>
       layoutTown(
@@ -76,7 +74,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <TownCanvas
           layout={layout}
           morale={sim.morale}
-          residents={residentCount(HOUSES_BY_STAGE[stage]) + facilityResidents}
+          residents={Math.min(sim.population.total, MAX_WALKING_RESIDENTS)}
           selectedKey={arranging ? mover : selGoal || selFacility ? selected : null}
           onSelect={key => {
             setSelected(key);
@@ -113,6 +111,8 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
       ) : (
         <p className="speech">住民「{line}」<span className="hint">　住民をタップすると、名言を教えてくれます。</span></p>
       )}
+
+      <PopulationInfo sim={sim} />
 
       {arranging ? (
         <div className="arrange-bar">
@@ -154,6 +154,28 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <p className="hint center">建物をタップすると、くわしい情報と建て替えができます。ドラッグで街を動かせます。</p>
       )}
     </div>
+  );
+}
+
+/** 人口と税収 */
+function PopulationInfo({ sim }: { sim: SimResult }) {
+  const p = sim.population;
+  return (
+    <details className="population">
+      <summary>
+        人口 <strong>{p.total}人</strong>
+        {p.away > 0 && <span className="hint">（{p.away}人が引っ越し中）</span>}
+        <span className="hint">　{sim.activeToday ? `今日の税収 +${sim.taxToday}（明日の朝に入ります）` : `今日活動すると税収 +${sim.taxToday}`}</span>
+      </summary>
+      <ul className="hint">
+        <li>民家の住民 {p.houses}人（街が発展すると民家が増えます）</li>
+        <li>建物のレベルの合計 {p.buildings}人（建て替えるほど増えます）</li>
+        <li>施設に集まる住民 {p.facilities}人</li>
+        <li>続けたごほうび {p.activity}人（活動した日7日ごとに1人）</li>
+        {p.away > 0 && <li>引っ越し中 −{p.away}人（しょんぼりで終わった日に1人出ていき、元気で終わった日に1人戻ります）</li>}
+        <li>税収：目標や課題を1つでもやった日に、人口×0.5 コイン</li>
+      </ul>
+    </details>
   );
 }
 

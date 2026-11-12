@@ -1,5 +1,5 @@
 // 住民の見た目（色の差し替え）とやる気。見た目は番号ごとに必ず異なる組み合わせになる。
-import { moodForMorale, type Mood } from '../core/rules';
+import { moodForMorale, RESIDENT_BASE, RESIDENTS_PER_HOUSE, type Mood } from '../core/rules';
 
 const HAIR = ['#7a4b33', '#3b2a2e', '#2f3442', '#a0603a', '#d9ae79', '#6b5a7a'];
 const SKIN: Array<[string, string]> = [
@@ -40,7 +40,7 @@ export function residentMood(index: number, morale: number): Mood {
 }
 
 export function residentCount(houses: number): number {
-  return 2 + houses * 2;
+  return RESIDENT_BASE + houses * RESIDENTS_PER_HOUSE;
 }
 
 const LINES: Record<Mood, string[]> = {
