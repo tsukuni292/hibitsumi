@@ -21,6 +21,8 @@ export interface SpriteVariant {
   /** 色の差し替え（住民の見た目用）。キャッシュのキーにも使う */
   swap?: Record<string, string>;
   swapKey?: string;
+  /** この文字の画素だけを、この色で描く（夜の窓明かり用）。キャッシュのキーは swapKey に含める */
+  only?: Record<string, string>;
 }
 
 const cache = new Map<string, HTMLCanvasElement>();
@@ -42,7 +44,8 @@ export function getSprite(name: string, v: SpriteVariant = {}): HTMLCanvasElemen
     const row = def.rows[y] ?? '';
     for (let x = 0; x < def.w; x++) {
       const ch = row[x] ?? '.';
-      const hex = v.swap?.[ch] ?? PALETTE[ch];
+      if (v.only && !(ch in v.only)) continue;
+      const hex = v.only?.[ch] ?? v.swap?.[ch] ?? PALETTE[ch];
       if (!hex) continue;
       const [r, g, b] = hexToRgb(hex);
       const o = (y * def.w + x) * 4;

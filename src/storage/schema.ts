@@ -89,9 +89,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV7 = z
+const saveSchemaV8 = z
   .object({
-    schemaVersion: z.literal(7),
+    schemaVersion: z.literal(8),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -103,6 +103,7 @@ const saveSchemaV7 = z
     weeklyAssignments: z.array(weeklyAssignment),
     facilities: z.array(facility),
     taxFrom: gameDate,
+    events: z.array(z.object({ id: z.string().min(1), kind: z.enum(['hanami', 'matsuri', 'shukaku', 'mochitsuki']), date: gameDate })),
     placements: z.record(z.string().regex(/^(goal|fac|house):.+$/), placement),
     restDays: z.array(gameDate),
     upgrades: z.array(z.object({ date: gameDate, goalId: z.string().min(1) })),
@@ -114,10 +115,11 @@ const saveSchemaV7 = z
   .refine(s => unique(s.todos, t => t.id), { message: 'ToDoのIDが重複しています' })
   .refine(s => unique(s.facilities, f => f.id), { message: '施設のIDが重複しています' })
   .refine(s => unique(s.assignments, a => a.id), { message: '課題のIDが重複しています' })
-  .refine(s => unique(s.weeklyAssignments, w => w.id), { message: '毎週の課題のIDが重複しています' });
+  .refine(s => unique(s.weeklyAssignments, w => w.id), { message: '毎週の課題のIDが重複しています' })
+  .refine(s => unique(s.events, e => e.id), { message: '行事のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV7;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV8;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -145,6 +147,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
   5: data => ({ ...data, schemaVersion: 6, placements: {} }),
   // v6 → v7：人口と税収。過去の分の税収をまとめて受け取らないよう、最後に開いた日から数える
   6: data => ({ ...data, schemaVersion: 7, taxFrom: data.lastSeenDate }),
+  // v7 → v8：季節の行事
+  7: data => ({ ...data, schemaVersion: 8, events: [] }),
 };
 
 export type ParseResult =

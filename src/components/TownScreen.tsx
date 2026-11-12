@@ -10,11 +10,15 @@ import { inRangeFacilities, isCollapseImminent, isFadedNow, type SimResult } fro
 import type { FacilityKind, FacilityPurchase, SaveData } from '../core/types';
 import { formatShort } from '../app/format';
 import { formatSource, quoteFor } from '../core/quotes';
-import { residentLine } from '../render/residents';
+import { ambienceLine, residentLine } from '../render/residents';
 import { spriteSize } from '../render/spriteCache';
 import { layoutTown, placementAt, SPAN, type Placement, type TownLayout } from '../render/townLayout';
 import { SpriteImg } from './SpriteImg';
 import { TownCanvas } from './TownCanvas';
+import { useViewPrefs } from '../app/viewPrefs';
+import { EVENT_EFFECT_DAYS, EVENT_FOR_SEASON, EVENTS, eventActiveOn, SEASON_LABEL, seasonKey, seasonOf, weatherOf, type EventKind } from '../core/seasons';
+import { addDays, diffDays } from '../core/date';
+import { timeOfDay, type Ambience } from '../render/ambience';
 
 interface Props {
   save: SaveData;
@@ -40,6 +44,20 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
   const [arranging, setArranging] = useState(false);
   const [mover, setMover] = useState<string | null>(null);
   const [arrangeMsg, setArrangeMsg] = useState<string | null>(null);
+  const [eventOpen, setEventOpen] = useState(false);
+  const prefs = useViewPrefs();
+  // 時刻は1分ごとに見直す（夜になったら夜の街に）
+  const [hour, setHour] = useState(() => new Date().getHours() + new Date().getMinutes() / 60);
+  useEffect(() => {
+    const id = setInterval(() => setHour(new Date().getHours() + new Date().getMinutes() / 60), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const ambience: Ambience = useMemo(() => {
+    const season = prefs.season === 'auto' ? seasonOf(today) : prefs.season;
+    // 降る日なら、見た目の季節が冬なら雪、それ以外は雨
+    const weather = weatherOf(today) === 'clear' ? 'clear' : season === 'winter' ? 'snow' : 'rain';
+    return { season, time: prefs.time === 'auto' ? timeOfDay(hour) : prefs.time, weather };
+  }, [prefs, today, hour]);
   const zoom = ZOOMS[zoomIdx] ?? 3;
 
   const activeGoals = useMemo(() => save.goals.filter(g => isActive(g, today)), [save.goals, today]);
@@ -63,7 +81,8 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
   );
 
   const mood = moodForMorale(sim.morale);
-  const line = residentLine(mood, toDayNumber(today));
+  // 1日おきに、季節・時間・天気にちなんだ一言
+  const line = toDayNumber(today) % 2 === 0 ? ambienceLine(ambience, toDayNumber(today)) : residentLine(mood, toDayNumber(today));
   const quote = quoteCount === null ? null : quoteFor(toDayNumber(today), quoteCount);
   const selGoal = selected?.startsWith('goal:') ? activeGoals.find(g => `goal:${g.id}` === selected) ?? null : null;
   const selFacility = selected?.startsWith('fac:') ? facilities.find(f => `fac:${f.id}` === selected) ?? null : null;
@@ -81,6 +100,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
             if (key) setShopOpen(false);
           }}
           zoom={zoom}
+          ambience={ambience}
           onResidentTap={() => setQuoteCount(c => (c === null ? 0 : c + 1))}
           onPlaceTap={arranging ? (ax, ay, hitKey) => {
             const r = arrangeTap(layout, mover, ax, ay, hitKey);
@@ -136,8 +156,9 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         </div>
       ) : (
       <div className="btn-row">
-        <button type="button" className="btn" onClick={() => { setArranging(true); setSelected(null); setShopOpen(false); }}>配置を変える</button>
-        <button type="button" className={`btn${shopOpen ? ' primary' : ''}`} onClick={() => { setShopOpen(o => !o); setSelected(null); }}>
+        <button type="button" className="btn" onClick={() => { setArranging(true); setSelected(null); setShopOpen(false); setEventOpen(false); }}>配置を変える</button>
+        <button type="button" className={`btn${eventOpen ? ' primary' : ''}`} onClick={() => { setEventOpen(o => !o); setShopOpen(false); setSelected(null); }}>季節の行事</button>
+        <button type="button" className={`btn${shopOpen ? ' primary' : ''}`} onClick={() => { setShopOpen(o => !o); setEventOpen(false); setSelected(null); }}>
           住民のための施設を建てる
         </button>
         {sim.charmState !== 'none' && <span className="hint">お守り：{CHARM_LABEL[sim.charmState]}</span>}
@@ -145,6 +166,8 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
       )}
 
       {shopOpen && <FacilityShop sim={sim} dispatch={dispatch} newId={newId} />}
+      {eventOpen && <EventPanel sim={sim} today={today} dispatch={dispatch} newId={newId} />}
+      <EventBanner sim={sim} today={today} />
 
       {selGoal && (
         <BuildingPanel save={save} sim={sim} today={today} goalId={selGoal.id} dispatch={dispatch} onClose={() => setSelected(null)} />
@@ -154,6 +177,52 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <p className="hint center">建物をタップすると、くわしい情報と建て替えができます。ドラッグで街を動かせます。</p>
       )}
     </div>
+  );
+}
+
+/** 開催中の行事（効果が続いているもの） */
+function EventBanner({ sim, today }: { sim: SimResult; today: GameDate }) {
+  const active = sim.events.filter(e => (e.kind === 'matsuri' || e.kind === 'shukaku') && eventActiveOn(e.date, today));
+  if (active.length === 0) return null;
+  return (
+    <p className="event-banner">
+      {active.map(e => `🏮 ${EVENTS[e.kind].label}開催中（${EVENTS[e.kind].effect.replace(/^開いた日から\d日間、/, '')}・あと${diffDays(addDays(e.date, EVENT_EFFECT_DAYS), today)}日）`).join('　')}
+    </p>
+  );
+}
+
+/** 季節の行事：今の季節の行事をコインで開く（季節ごとに1回） */
+function EventPanel({ sim, today, dispatch, newId }: { sim: SimResult; today: GameDate; dispatch: (a: Action) => boolean; newId: () => string }) {
+  const panelRef = usePanelScroll('event');
+  const season = seasonOf(today);
+  const kind: EventKind = EVENT_FOR_SEASON[season];
+  const def = EVENTS[kind];
+  const held = sim.events.some(e => e.kind === kind && seasonKey(e.date) === seasonKey(today));
+  const reason = held ? 'この季節はもう開きました' : sim.coins < def.coins ? `あと${def.coins - sim.coins}コイン` : null;
+  return (
+    <section className="building-panel" ref={panelRef}>
+      <h2>季節の行事（今は{SEASON_LABEL[season]}）</h2>
+      <p className="hint">コインを使って、季節ごとに1回だけ開けます。季節は本物の暦で決まります（見た目の季節の設定とは別）。</p>
+      <div className="shop-item">
+        <div className="shop-info">
+          <div className="goal-name">{def.label}</div>
+          <div className="goal-lines"><span>{def.effect}</span></div>
+          <div className="goal-lines"><span>コイン {def.coins}</span></div>
+        </div>
+        <div className="shop-buy">
+          <button
+            type="button"
+            className="btn small primary"
+            disabled={reason !== null}
+            onClick={() => { if (window.confirm(`${def.label}を開きますか？（コイン ${def.coins}）`)) dispatch({ type: 'holdEvent', id: newId(), kind }); }}
+          >
+            開く
+          </button>
+          {reason && <span className="hint">{reason}</span>}
+        </div>
+      </div>
+      <p className="hint">ほかの季節の行事：{(Object.keys(EVENTS) as EventKind[]).filter(k => k !== kind).map(k => `${SEASON_LABEL[EVENTS[k].season]}の${EVENTS[k].label}（${EVENTS[k].effect}）`).join('、')}</p>
+    </section>
   );
 }
 

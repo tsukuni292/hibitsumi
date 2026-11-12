@@ -3,7 +3,8 @@
 import { addDays, dateRange, diffDays, isSunday, weekStart, type GameDate } from './date';
 import { frequencyOn, idealCharsOn, isActive, isAssignmentGoalOn, isCheckable, isScheduledDaily, isWeeklyOn } from './goals';
 import * as R from './rules';
-import type { Assignment, CheckLevel, FacilityKind, FacilityPurchase, Goal, SaveData } from './types';
+import { EVENTS, eventActiveOn, seasonOf as seasonOfDate, HANAMI_MORALE, MATSURI_TAX_FACTOR, MOCHITSUKI_MORALE, seasonKey, SHUKAKU_IDEAL_BONUS } from './seasons';
+import type { Assignment, CheckLevel, FacilityKind, FacilityPurchase, Goal, SaveData, SeasonEvent } from './types';
 
 export type DayKind =
   /** 通常の判定 */
@@ -103,6 +104,8 @@ export interface SimResult {
   taxToday: number;
   /** 今日すでに活動したか（税収の対象か） */
   activeToday: boolean;
+  /** 開いた季節の行事（有効なものだけ） */
+  events: SeasonEvent[];
 }
 
 export interface Population {
@@ -176,6 +179,20 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   // 開始日〜今日の範囲外の購入（手で編集したバックアップなど）は、表示・効果・費用のすべてで無視する
   const validPurchases = inRangeFacilities(save, today);
   const purchases = groupBy(validPurchases, f => f.date);
+  // 季節の行事：今日までに開いた、季節に合っていて季節ごとに1回目のもの
+  const heldKeys = new Set<string>();
+  const validEvents = [...save.events]
+    .filter(e => EVENTS[e.kind] !== undefined && e.date >= save.startDate && e.date <= today)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .filter(e => {
+      const key = `${e.kind}:${seasonKey(e.date)}`;
+      if (heldKeys.has(key) || EVENTS[e.kind].season !== seasonOfDate(e.date)) return false;
+      heldKeys.add(key);
+      return true;
+    });
+  const eventsOn = groupBy(validEvents, e => e.date);
+  const effectOn = (kind: 'matsuri' | 'shukaku', date: GameDate) => validEvents.some(e => e.kind === kind && eventActiveOn(e.date, date));
+
   const todosDone = groupBy(save.todos.filter(t => t.doneOn !== null), t => t.doneOn as GameDate);
   // 担当の目標が消えた課題（壊れたデータ）は数えない
   const assignments = save.assignments.filter(a => goalById.has(a.goalId));
@@ -209,7 +226,9 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   const days: DayResult[] = [];
 
   const coinsForCheck = (c: CheckLevel, date: GameDate) =>
-    R.COINS[c] + (c === 'ideal' && effective('teahouse', date) ? R.TEAHOUSE_IDEAL_BONUS : 0);
+    R.COINS[c]
+    + (c === 'ideal' && effective('teahouse', date) ? R.TEAHOUSE_IDEAL_BONUS : 0)
+    + (c === 'ideal' && effectOn('shukaku', date) ? SHUKAKU_IDEAL_BONUS : 0);
 
   const todoCoinsOn = (date: GameDate) => {
     const n = Math.min((todosDone.get(date) ?? []).length, R.TODO_DAILY_CAP);
@@ -274,8 +293,15 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       spentCoins += def.coins;
       spentMorale += def.morale;
     }
+    // 季節の行事：費用と、その場で効く分（お花見・餅つきのやる気）
+    let gainedMorale = 0;
+    for (const e of eventsOn.get(date) ?? []) {
+      spentCoins += EVENTS[e.kind].coins;
+      if (e.kind === 'hanami') gainedMorale += HANAMI_MORALE;
+      if (e.kind === 'mochitsuki') gainedMorale += MOCHITSUKI_MORALE;
+    }
     coins -= spentCoins;
-    morale = Math.max(R.MORALE_MIN, R.round2(morale - spentMorale));
+    morale = Math.min(R.MORALE_MAX, Math.max(R.MORALE_MIN, R.round2(morale - spentMorale + gainedMorale)));
     return { coins: spentCoins, morale: spentMorale };
   };
 
@@ -423,9 +449,11 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
       if (mood === 'sad') away = prev + 1;
       else if (mood === 'happy') away = Math.max(0, prev - 1);
       else away = prev;
+      // 餅つきの日は、引っ越した住民が全員戻る
+      if ((eventsOn.get(date) ?? []).some(e => e.kind === 'mochitsuki')) away = 0;
       movedOut = populationOf(gross, away).away - prev;
       away = populationOf(gross, away).away;
-      if (anyCheck) tax = taxFor(populationOf(gross, away).total);
+      if (anyCheck) tax = taxFor(populationOf(gross, away).total) * (effectOn('matsuri', date) ? MATSURI_TAX_FACTOR : 1);
       coins += tax;
     }
     const population = populationOf(gross, away).total;
@@ -480,7 +508,8 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
   // 今日の人口：今日の建設まで反映。活動した日の積み重ねは、今日活動していれば今日の分も数える
   const activeToday = anyToday;
   if (activeToday) activeDays += 1;
-  const population = populationOf(grossPopulation(today), today >= save.taxFrom ? away : 0);
+  const heldToday = (eventsOn.get(today) ?? []).some(e => e.kind === 'mochitsuki');
+  const population = populationOf(grossPopulation(today), today >= save.taxFrom && !heldToday ? away : 0);
 
   // charmReadyOn はクロージャ内で書き換わるので、型の絞り込みを外して読む
   const readyOn = charmReadyOn as GameDate | null;
@@ -506,7 +535,8 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     // 休養日は連続記録を増やさない（確定時と同じ規則）
     streak: streak + (anyToday && !rest.has(today) ? 1 : 0),
     population,
-    taxToday: today >= save.taxFrom ? taxFor(population.total) : 0,
+    taxToday: today >= save.taxFrom ? taxFor(population.total) * (effectOn('matsuri', today) ? MATSURI_TAX_FACTOR : 1) : 0,
+    events: validEvents,
     activeToday,
   };
 }

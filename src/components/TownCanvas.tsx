@@ -1,5 +1,6 @@
 // 街の描画。指（マウス）でドラッグして動かし、タップで建物を選ぶ。
 import { useEffect, useRef } from 'react';
+import { LAMP_LIGHTS, particles, seasonVariant, tint, WINDOW_LIGHTS, type Ambience } from '../render/ambience';
 import { getSprite } from '../render/spriteCache';
 import { residentLook, residentMood } from '../render/residents';
 import { TILE, type TownLayout } from '../render/townLayout';
@@ -15,6 +16,8 @@ interface Props {
   zoom: number;
   /** 住民をタップしたとき（住民の番号） */
   onResidentTap?: (index: number) => void;
+  /** 季節・時間帯・天気の見た目 */
+  ambience: Ambience;
   /** 配置を変えるモード：タップした地点（アート座標）と、そこにある動かせる物のキー */
   onPlaceTap?: (ax: number, ay: number, hitKey: string | null) => void;
 }
@@ -54,12 +57,12 @@ function residentPos(i: number, t: number, lay: TownLayout): { x: number; y: num
   return { x: Math.round(x), y: lane.y };
 }
 
-export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap, onPlaceTap }: Props) {
+export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap, onPlaceTap, ambience }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 描画ループから最新の props を読むための参照
-  const live = useRef({ layout, morale, residents, selectedKey, zoom });
-  live.current = { layout, morale, residents, selectedKey, zoom };
+  const live = useRef({ layout, morale, residents, selectedKey, zoom, ambience });
+  live.current = { layout, morale, residents, selectedKey, zoom, ambience };
   const cam = useRef({ x: 0, y: 0, centered: false });
   const view = useRef({ cssW: 1, cssH: 1, dpr: 1 });
   const onSelectRef = useRef(onSelect);
@@ -147,7 +150,7 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) return;
-      const { layout: lay, morale: m, residents: count, selectedKey: sel, zoom: z } = live.current;
+      const { layout: lay, morale: m, residents: count, selectedKey: sel, zoom: z, ambience: amb } = live.current;
       const { dpr } = view.current;
       // 1アート画素 = 整数個の実画素 にしてにじみを防ぐ
       const dev = Math.max(1, Math.round(z * dpr));
@@ -161,12 +164,12 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
       ctx.imageSmoothingEnabled = false;
 
       lay.tiles.forEach((row, y) => row.forEach((name, x) => {
-        const sp = getSprite(name);
+        const sp = getSprite(name, seasonVariant(name, amb.season) ?? undefined);
         if (sp) ctx.drawImage(sp, x * TILE, y * TILE);
       }));
 
       for (const it of lay.items) {
-        const sp = getSprite(it.sprite, { faded: it.faded });
+        const sp = getSprite(it.sprite, seasonVariant(it.sprite, amb.season) ?? { faded: it.faded });
         if (sp) ctx.drawImage(sp, it.x, it.y);
       }
 
@@ -182,6 +185,25 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
         if (!sp) continue;
         ctx.drawImage(sp, pos.x, pos.y);
         if (i === talking) drawSpeechMark(ctx, pos.x + RESIDENT.w / 2, pos.y - 2);
+      }
+
+      // 時間帯の色をかぶせ、夕方・夜は窓と街灯に明かりをともす
+      const shade = tint(amb);
+      if (shade) {
+        ctx.fillStyle = shade;
+        ctx.fillRect(-TILE, -TILE, lay.width + TILE * 2, lay.height + TILE * 2);
+      }
+      if (amb.time === 'night' || amb.time === 'evening') {
+        for (const it of lay.items) {
+          const v = it.sprite === 'deco_lamp' ? LAMP_LIGHTS : it.place && !it.faded ? WINDOW_LIGHTS : null;
+          const sp = v && getSprite(it.sprite, v);
+          if (sp) ctx.drawImage(sp, it.x, it.y);
+        }
+      }
+      // 雨・雪・花びら・落ち葉
+      for (const pt of particles(amb, t, lay.width, lay.height)) {
+        ctx.fillStyle = pt.color;
+        ctx.fillRect(pt.x, pt.y, pt.w, pt.h);
       }
 
       if (sel) {

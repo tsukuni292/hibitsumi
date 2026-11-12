@@ -275,3 +275,6 @@ details summary { cursor: pointer; }
 .population { border: 2px solid var(--ink); border-radius: 10px; padding: 6px 10px; background: #fffaf0; }
 .population summary { cursor: pointer; }
 .population ul { margin: 6px 0 0; padding-left: 1.2em; }
+
+/* 季節の行事 */
+.event-banner { margin: 0; padding: 6px 10px; border-radius: 10px; background: #fde7c4; border: 2px solid var(--ink); font-weight: 700; font-size: .9rem; }

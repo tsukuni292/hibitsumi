@@ -1,7 +1,8 @@
 import type { BuildingLook } from './buildingLook';
 import type { GameDate } from './date';
+import type { EventKind } from './seasons';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -95,6 +96,13 @@ export interface Placement {
   block: number;
 }
 
+/** 開いた季節の行事 */
+export interface SeasonEvent {
+  id: string;
+  kind: EventKind;
+  date: GameDate;
+}
+
 export type FacilityKind = 'bench' | 'sakura' | 'stall' | 'teahouse' | 'bathhouse' | 'shrine';
 
 export interface FacilityPurchase {
@@ -124,6 +132,7 @@ export interface SaveData {
   placements: Record<string, Placement>;
   /** この日から税収と引っ越しを数える（機能を入れた日。過去の分をまとめて受け取らないように） */
   taxFrom: GameDate;
+  events: SeasonEvent[];
   restDays: GameDate[];
   /** 実行した順に並ぶ */
   upgrades: Upgrade[];

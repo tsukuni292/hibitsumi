@@ -1,6 +1,7 @@
 // ユーザーの操作。すべて「記録 + 操作 + 今日」→「新しい記録 or エラー」の純粋関数。
 // 不正な操作（2日以上前のチェック、休養日のチェックなど）はここで必ず弾く。
 import { normalizeLook, type BuildingLook } from './buildingLook';
+import { EVENTS, seasonKey, seasonOf, type EventKind } from './seasons';
 import { addDays, gameDateFromLocal, isGameDate, maxDate, weekStart, type GameDate } from './date';
 import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, textOn, upsertTimed } from './goals';
 import * as R from './rules';
@@ -38,6 +39,8 @@ export type Action =
   | { type: 'setPlacements'; placements: Record<string, Placement> }
   /** 自由配置をやめて自動で並べ直す */
   | { type: 'resetPlacements' }
+  /** 今の季節の行事を開く（季節ごとに1回） */
+  | { type: 'holdEvent'; id: string; kind: EventKind }
   | { type: 'setDayStartHour'; hour: number }
   | { type: 'markSummarySeen'; upTo: GameDate }
   | { type: 'markBackup' }
@@ -353,6 +356,21 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
         ok: true,
         save: { ...save, facilities: [...save.facilities, { id: action.id, kind: action.kind, date: today }] },
         note: `${def.label}を建てました！効果は明日から`,
+      };
+    }
+
+    case 'holdEvent': {
+      const def = EVENTS[action.kind];
+      if (!def) return fail('その行事はありません');
+      if (save.events.some(e => e.id === action.id)) return fail('同じIDの行事がすでにあります');
+      if (def.season !== seasonOf(today)) return fail(`${def.label}は今の季節には開けません`);
+      if (save.events.some(e => e.kind === action.kind && seasonKey(e.date) === seasonKey(today))) return fail(`${def.label}はこの季節にもう開きました`);
+      const sim = simulate(save, today);
+      if (sim.coins < def.coins) return fail(`コインが足りません（あと${def.coins - sim.coins}枚）`);
+      return {
+        ok: true,
+        save: { ...save, events: [...save.events, { id: action.id, kind: action.kind, date: today }] },
+        note: `${def.label}を開きました！`,
       };
     }
 

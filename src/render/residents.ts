@@ -49,6 +49,22 @@ const LINES: Record<Mood, string[]> = {
   sad: ['最近ちょっと元気が出なくて…', 'リーダー、今日は1つだけでも…', '街がさみしくなってきました'],
 };
 
+const AMBIENCE_LINES: Record<string, string[]> = {
+  night: ['夜の街もいいものですね', '今日もおつかれさまでした', 'そろそろ休みましょうか'],
+  rain: ['雨の日は読書日和ですね', '傘を忘れずに！'],
+  snow: ['雪だ！足元に気をつけて', '寒い日は温かいお茶を'],
+  spring: ['桜がきれいですね', '新しいことを始めたくなる季節です'],
+  summer: ['暑いですね、水分補給を！', '夏祭りが楽しみです'],
+  autumn: ['落ち葉の季節ですね', '読書の秋、勉強の秋！'],
+  winter: ['寒いけど、がんばりましょう', 'こたつから出るのが一番の難関です'],
+};
+
+/** 季節・時間・天気にちなんだ一言（夜＞天気＞季節の順で選ぶ） */
+export function ambienceLine(a: { season: string; time: string; weather: string }, seed: number): string {
+  const list = AMBIENCE_LINES[a.time === 'night' ? 'night' : a.weather !== 'clear' ? a.weather : a.season] ?? AMBIENCE_LINES[a.season]!;
+  return list[((seed % list.length) + list.length) % list.length]!;
+}
+
 export function residentLine(mood: Mood, seed: number): string {
   const list = LINES[mood];
   return list[((seed % list.length) + list.length) % list.length]!;

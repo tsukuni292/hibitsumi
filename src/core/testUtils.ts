@@ -42,6 +42,7 @@ export function save(goals: Goal[], patch: Partial<SaveData> = {}): SaveData {
     assignments: [],
     weeklyAssignments: [],
     placements: {},
+    events: [],
     // 税収・引っ越しは、それを確かめるテストだけで有効にする（ほかのテストのコイン計算を変えないため）
     taxFrom: '9999-12-31',
     facilities: [],

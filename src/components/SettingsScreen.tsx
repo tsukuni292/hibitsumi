@@ -11,6 +11,9 @@ import { formatShort } from '../app/format';
 import { APP_VERSION, BUILD_TIME, reinstallLatest } from '../app/update';
 import { GoalForm, type GoalFormValue } from './GoalForm';
 import { NotifySection } from './NotifySection';
+import { setViewPrefs, useViewPrefs, type ViewPrefs } from '../app/viewPrefs';
+import { SEASON_LABEL } from '../core/seasons';
+import { TIME_LABEL } from '../render/ambience';
 import type { Notify } from '../app/useNotify';
 
 interface Props {
@@ -112,6 +115,8 @@ export function SettingsScreen({ game, save, today, notify }: Props) {
 
       <NotifySection notify={notify} />
 
+      <ViewSection />
+
       <section className="card">
         <h2>1日の区切り</h2>
         <label className="inline">
@@ -162,6 +167,32 @@ export function SettingsScreen({ game, save, today, notify }: Props) {
         <p className="hint">新しい機能が出てこないときに押してください（記録はそのまま残ります）。</p>
       </div>
     </div>
+  );
+}
+
+function ViewSection() {
+  const prefs = useViewPrefs();
+  return (
+    <section className="card">
+      <h2>街の見た目</h2>
+      <p className="hint">ふだんは本物の季節と時刻に合わせて変わります。好きな季節・時間に固定することもできます（行事や計算には影響しません）。</p>
+      <div className="btn-row">
+        <label className="inline">
+          季節
+          <select value={prefs.season} onChange={e => setViewPrefs({ ...prefs, season: e.target.value as ViewPrefs['season'] })}>
+            <option value="auto">本物に合わせる</option>
+            {Object.entries(SEASON_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
+        <label className="inline">
+          時間
+          <select value={prefs.time} onChange={e => setViewPrefs({ ...prefs, time: e.target.value as ViewPrefs['time'] })}>
+            <option value="auto">本物に合わせる</option>
+            {Object.entries(TIME_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
+      </div>
+    </section>
   );
 }
 
