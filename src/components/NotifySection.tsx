@@ -40,6 +40,7 @@ export function NotifySection({ notify }: { notify: Notify }) {
             <input type="checkbox" checked={s.collapse} onChange={e => set({ collapse: e.target.checked })} />
             倒壊寸前の建物
           </label>
+          <p className="hint">1日の区切り時刻より前の時刻（例：0:30）にすると、その日の夜おそく（日付が変わったあと）に届きます。</p>
           <p className="hint">通知には目標や課題の名前が入ります。そのため、この先1週間分の通知の文を通知サーバーに預けます。1週間アプリを開かないと通知は止まります。</p>
           <div className="btn-row">
             <button type="button" className="btn small" disabled={busy} onClick={() => void notify.test()}>試しに通知を送る</button>

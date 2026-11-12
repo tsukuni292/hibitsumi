@@ -4,7 +4,7 @@ import { addDays, dateRange, diffDays, isSunday, weekStart, type GameDate } from
 import { frequencyOn, idealCharsOn, isActive, isAssignmentGoalOn, isCheckable, isScheduledDaily, isWeeklyOn } from './goals';
 import * as R from './rules';
 import { EVENTS, eventActiveOn, seasonOf as seasonOfDate, HANAMI_MORALE, MATSURI_TAX_FACTOR, MOCHITSUKI_MORALE, seasonKey, SHUKAKU_IDEAL_BONUS } from './seasons';
-import { applyTerrain, FARM_TILES_PER_TAX, isFarm, isValidCell, TERRAIN, type TerrainKind } from './terrain';
+import { applyTerrain, FARM_TAX_MAX, FARM_TILES_PER_TAX, isFarm, isValidCell, TERRAIN, type TerrainKind } from './terrain';
 import type { Assignment, CheckLevel, FacilityKind, FacilityPurchase, Goal, SaveData, SeasonEvent } from './types';
 
 export type DayKind =
@@ -202,7 +202,7 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     e => e.date,
   );
   const terrain = new Map<string, TerrainKind>();
-  const farmTax = () => Math.floor([...terrain.values()].filter(isFarm).length / FARM_TILES_PER_TAX);
+  const farmTax = () => Math.min(FARM_TAX_MAX, Math.floor([...terrain.values()].filter(isFarm).length / FARM_TILES_PER_TAX));
 
   const todosDone = groupBy(save.todos.filter(t => t.doneOn !== null), t => t.doneOn as GameDate);
   // 担当の目標が消えた課題（壊れたデータ）は数えない
@@ -429,7 +429,8 @@ export function simulate(save: SaveData, today: GameDate): SimResult {
     if (!capped) {
       for (const a of assignmentsDue.get(date) ?? []) {
         const goal = goalById.get(a.goalId);
-        if (!goal || !isActive(goal, date)) continue;
+        // 締切の日に「課題があるときだけ」でない目標の課題は、罰の対象にしない（コインの対象にもならないため）
+        if (!goal || !isAssignmentGoalOn(goal, date)) continue;
         if (a.doneOn !== null && a.doneOn <= a.due) continue;
         addMisses(a.goalId, 1, date, collapsed, prot);
         overdue.push(a.id);

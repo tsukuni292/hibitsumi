@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { isGameDate } from '../core/date';
 import { MINI_KINDS, PART_OPTIONS } from '../core/buildingLook';
-import { TERRAIN_COLS, TERRAIN_MAX_LOG, TERRAIN_MAX_ROWS } from '../core/terrain';
+import { TERRAIN_COLS, TERRAIN_HARD_MAX_LOG, TERRAIN_MAX_ROWS } from '../core/terrain';
 import { BUILDING_NAME_MAX, DIARY_MAX_IDEAL_CHARS, PLACE_MAX_BLOCKS, PLACE_MAX_COL } from '../core/rules';
 import { SCHEMA_VERSION, type SaveData } from '../core/types';
 
@@ -109,7 +109,7 @@ const saveSchemaV9 = z
       x: z.number().int().min(0).max(TERRAIN_COLS - 1),
       y: z.number().int().min(0).max(TERRAIN_MAX_ROWS - 1),
       kind: z.enum(['road', 'paddy', 'field', 'water', 'flowerbed', 'garden', 'forest']).nullable(),
-    })).max(TERRAIN_MAX_LOG),
+    })).max(TERRAIN_HARD_MAX_LOG),
     events: z.array(z.object({ id: z.string().min(1), kind: z.enum(['hanami', 'matsuri', 'shukaku', 'mochitsuki']), date: gameDate })),
     placements: z.record(z.string().regex(/^(goal|fac|house):.+$/), placement),
     restDays: z.array(gameDate),

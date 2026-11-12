@@ -3,7 +3,7 @@
 //   POST { action: 'register' } … 端末の宛先と、この先の通知の予定をまるごと置き換える
 //   POST { action: 'unregister' } … 端末を消す
 //   POST { action: 'test' }     … その端末にすぐ試しの通知を送る
-//   POST { action: 'send' }     … 時刻が来た通知を送る（pg_cron が5分ごとに呼ぶ）
+//   POST { action: 'send', key } … 時刻が来た通知を送る（pg_cron が5分ごとに、DB の合い言葉 cron_key を付けて呼ぶ）
 // アカウントはなく、端末が作った合い言葉（secret）で本人確認する。secret はハッシュだけ保存する
 import webpush from 'npm:web-push@3.6.7';
 import postgres from 'npm:postgres@3.4.5';
@@ -17,17 +17,21 @@ const MAX_BODY = 400;
 const MAX_AHEAD_MS = 15 * 24 * 60 * 60 * 1000;
 /** これ以上遅れた通知は送らない（時期がずれたお知らせはかえって邪魔なため） */
 const MAX_LATE_MS = 60 * 60 * 1000;
+/** 登録できる端末の総数（個人用のアプリなので小さく。悪用で DB が膨らまないように） */
+const MAX_DEVICES = 50;
+/** 1回の送信で扱う件数 */
+const SEND_BATCH = 500;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-type Keys = { vapid_public: string; vapid_private: string };
+type Keys = { vapid_public: string; vapid_private: string; cron_key: string };
 type Item = { at: string; title: string; body: string; tag: string };
 
 async function vapidKeys(): Promise<Keys> {
-  const rows = await sql<Keys[]>`select vapid_public, vapid_private from hibitsumi.config where id = 1`;
+  const rows = await sql<Keys[]>`select vapid_public, vapid_private, cron_key from hibitsumi.config where id = 1`;
   if (rows[0]) return rows[0];
   const k = webpush.generateVAPIDKeys();
   await sql`insert into hibitsumi.config (id, vapid_public, vapid_private) values (1, ${k.publicKey}, ${k.privateKey}) on conflict (id) do nothing`;
-  const again = await sql<Keys[]>`select vapid_public, vapid_private from hibitsumi.config where id = 1`;
+  const again = await sql<Keys[]>`select vapid_public, vapid_private, cron_key from hibitsumi.config where id = 1`;
   return again[0]!;
 }
 
@@ -37,6 +41,8 @@ async function sha256(s: string): Promise<string> {
 }
 
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+/** 長すぎる文は断らずに切り詰める（1件の長さで予定全体が止まらないように） */
+const clip = (v: unknown, max: number): string | null => (typeof v === 'string' && v.length > 0 ? [...v].slice(0, max).join('') : null);
 
 function validSubscription(s: any): boolean {
   return s && isStr(s.endpoint, 1000) && s.endpoint.startsWith('https://') && s.keys && isStr(s.keys.p256dh, 200) && isStr(s.keys.auth, 100);
@@ -47,10 +53,13 @@ function validItems(items: unknown): Item[] | null {
   const now = Date.now();
   const out: Item[] = [];
   for (const it of items as any[]) {
-    const t = Date.parse(it?.at);
+    if (!it || typeof it !== 'object') return null;
+    const t = Date.parse(it.at);
     if (!Number.isFinite(t) || t > now + MAX_AHEAD_MS) return null;
-    if (!isStr(it.title, MAX_TITLE) || !isStr(it.body, MAX_BODY) || !isStr(it.tag, 40)) return null;
-    if (t > now) out.push({ at: new Date(t).toISOString(), title: it.title, body: it.body, tag: it.tag });
+    const title = clip(it.title, MAX_TITLE);
+    const body = clip(it.body, MAX_BODY);
+    if (!title || !body || !isStr(it.tag, 40)) return null;
+    if (t > now) out.push({ at: new Date(t).toISOString(), title, body, tag: it.tag });
   }
   return out;
 }
@@ -62,13 +71,14 @@ async function push(keys: Keys, subscription: unknown, payload: { title: string;
 
 async function sendDue() {
   const keys = await vapidKeys();
-  // 取り出したものは消す（二重送信を防ぐ）
+  // 1件ずつ、消してから送る（二重送信を防ぐ。途中で止まっても、残りは次の回で送られる）
   const due = await sql`
-    delete from hibitsumi.queue q using hibitsumi.devices d
-    where q.device_id = d.device_id and q.send_at <= now()
-    returning q.send_at, q.title, q.body, q.tag, d.device_id, d.subscription`;
+    select q.id, q.send_at, q.title, q.body, q.tag, d.device_id, d.subscription
+    from hibitsumi.queue q join hibitsumi.devices d on q.device_id = d.device_id
+    where q.send_at <= now() order by q.send_at limit ${SEND_BATCH}`;
   let sent = 0;
   for (const r of due) {
+    await sql`delete from hibitsumi.queue where id = ${r.id}`;
     if (Date.now() - new Date(r.send_at).getTime() > MAX_LATE_MS) continue;
     try {
       await push(keys, r.subscription, { title: r.title, body: r.body, tag: r.tag });
@@ -101,7 +111,11 @@ Deno.serve(async (req: Request) => {
     if (req.method !== 'POST') return json({ error: 'method' }, 405);
     const body = await req.json().catch(() => null);
     if (!body || typeof body.action !== 'string') return json({ error: 'bad request' }, 400);
-    if (body.action === 'send') return json(await sendDue());
+    if (body.action === 'send') {
+      // pg_cron からだけ（DB の合い言葉を知っている者だけ）
+      if (typeof body.key !== 'string' || body.key !== (await vapidKeys()).cron_key) return json({ error: 'forbidden' }, 403);
+      return json(await sendDue());
+    }
 
     const { deviceId, secret } = body;
     if (typeof deviceId !== 'string' || !UUID_RE.test(deviceId) || !isStr(secret, 200) || secret.length < 32) return json({ error: 'bad device' }, 400);
@@ -124,14 +138,20 @@ Deno.serve(async (req: Request) => {
       if (!validSubscription(body.subscription)) return json({ error: 'bad subscription' }, 400);
       const items = validItems(body.items);
       if (!items) return json({ error: 'bad items' }, 400);
+      if (!found[0]) {
+        const [{ n }] = await sql`select count(*)::int as n from hibitsumi.devices`;
+        if (n >= MAX_DEVICES) return json({ error: 'too many devices' }, 429);
+      }
       await sql.begin(async tx => {
+        // 同じ宛先が別の端末IDで残っていたら消す（古い予定が二重に届かないように）
+        await tx`delete from hibitsumi.devices where subscription->>'endpoint' = ${body.subscription.endpoint} and device_id <> ${deviceId}`;
         await tx`
           insert into hibitsumi.devices (device_id, secret_hash, subscription, updated_at)
           values (${deviceId}, ${hash}, ${tx.json(body.subscription)}, now())
           on conflict (device_id) do update set subscription = excluded.subscription, updated_at = now()`;
         await tx`delete from hibitsumi.queue where device_id = ${deviceId}`;
-        for (const it of items) {
-          await tx`insert into hibitsumi.queue (device_id, send_at, title, body, tag) values (${deviceId}, ${it.at}, ${it.title}, ${it.body}, ${it.tag})`;
+        if (items.length) {
+          await tx`insert into hibitsumi.queue ${tx(items.map(it => ({ device_id: deviceId, send_at: it.at, title: it.title, body: it.body, tag: it.tag })))}`;
         }
       });
       return json({ ok: true, queued: items.length });

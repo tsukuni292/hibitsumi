@@ -2,7 +2,7 @@
 // 不正な操作（2日以上前のチェック、休養日のチェックなど）はここで必ず弾く。
 import { normalizeLook, type BuildingLook } from './buildingLook';
 import { EVENTS, seasonKey, seasonOf, type EventKind } from './seasons';
-import { cellKey, currentTerrain, isValidCell, TERRAIN, TERRAIN_MAX_LOG, type TerrainKind } from './terrain';
+import { cellKey, currentTerrain, isValidCell, TERRAIN, TERRAIN_HARD_MAX_LOG, TERRAIN_MAX_LOG, type TerrainKind } from './terrain';
 import { addDays, gameDateFromLocal, isGameDate, maxDate, weekStart, type GameDate } from './date';
 import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, textOn, upsertTimed } from './goals';
 import * as R from './rules';
@@ -367,7 +367,9 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       if (action.kind !== null && !TERRAIN[action.kind]) return fail('その地形はありません');
       const now = currentTerrain(save.terrainLog).get(cellKey(action.x, action.y)) ?? null;
       if (now === action.kind) return fail(action.kind === null ? 'そこには何も置いていません' : `もう${TERRAIN[action.kind].label}です`);
-      if (save.terrainLog.length >= TERRAIN_MAX_LOG) return fail('地形の記録がいっぱいです');
+      // 上限を超えても「消す」はできるようにする（置けなくなっても、元に戻せるように）
+      const limit = action.kind === null ? TERRAIN_HARD_MAX_LOG : TERRAIN_MAX_LOG;
+      if (save.terrainLog.length >= limit) return fail('地形の記録がいっぱいです（これ以上は置けません）');
       if (action.kind !== null) {
         const cost = TERRAIN[action.kind].coins;
         const sim = simulate(save, today);
@@ -496,8 +498,8 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       };
       // 今週すでに出ていて締切がまだ先の分は、今日登録したものとして追加する（当日の完了はコインの対象外）
       const current = { ...weeklyInstance(w, lastIssueDate(w.issueDay, today), false), createdOn: today };
-      const addCurrent = current.due > today && !save.assignments.some(a => a.id === current.id)
-        && save.assignments.filter(a => a.doneOn === null).length < R.MAX_OPEN_ASSIGNMENTS;
+      // 締切の日に担当の目標が「課題があるときだけ」でなければ足さない（切り替え前の週の分で罰を受けないように）
+      const addCurrent = current.due > today && !save.assignments.some(a => a.id === current.id) && isAssignmentGoalOn(goal, current.due);
       return {
         ok: true,
         save: {

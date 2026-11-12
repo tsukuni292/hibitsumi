@@ -1,5 +1,6 @@
 // アプリの更新（オフライン用に保存した古い版から、新しい版へ切り替える）
 import { registerSW } from 'virtual:pwa-register';
+import { forgetLastSent } from './notify';
 
 /** 公開した版（package.json の version）とビルド日時 */
 export const APP_VERSION = __APP_VERSION__;
@@ -31,6 +32,8 @@ export function startUpdater(): void {
  * 消すのはアプリ本体の控え（Cache Storage と Service Worker）だけで、記録（IndexedDB）は消さない。
  */
 export async function reinstallLatest(): Promise<void> {
+  // 入れ直すと通知の購読も消えるので、次に開いたとき予定を送り直す
+  forgetLastSent();
   try {
     const regs = (await navigator.serviceWorker?.getRegistrations()) ?? [];
     await Promise.all(regs.map(r => r.unregister()));

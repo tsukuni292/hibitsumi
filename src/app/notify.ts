@@ -84,15 +84,24 @@ export async function enableNotify(state: NotifyState, save: SaveData, today: Ga
   return syncNotify(next, save, today, true);
 }
 
+/** サーバーから消せたときだけ「オフ」にする（失敗したらオンのまま。画面にエラーを出す） */
 export async function disableNotify(state: NotifyState): Promise<NotifyState> {
+  await call({ action: 'unregister', deviceId: state.deviceId, secret: state.secret });
+  const next = { ...state, enabled: false, lastSent: null };
+  saveNotifyState(next);
   try {
-    await call({ action: 'unregister', deviceId: state.deviceId, secret: state.secret });
     const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
     await sub?.unsubscribe();
-  } finally {
-    saveNotifyState({ ...state, enabled: false, lastSent: null });
+  } catch {
+    // サーバーからは消えているので、端末側の購読が残っても通知は来ない
   }
-  return { ...state, enabled: false, lastSent: null };
+  return next;
+}
+
+/** 次に必ず予定を送り直すようにする（アプリを入れ直すと購読が消えるため） */
+export function forgetLastSent(): void {
+  const s = loadNotifyState();
+  if (s.lastSent !== null) saveNotifyState({ ...s, lastSent: null });
 }
 
 export async function testNotify(state: NotifyState): Promise<void> {

@@ -36,7 +36,6 @@ export function weeklyInstance(w: WeeklyAssignment, issuedOn: GameDate, preRegis
 export function issueWeeklyAssignments(save: SaveData, today: GameDate): SaveData {
   if (save.weeklyAssignments.every(w => w.issuedThrough >= today)) return save;
   const ids = new Set(save.assignments.map(a => a.id));
-  let open = save.assignments.filter(a => a.doneOn === null).length;
   const added: Assignment[] = [];
   const weeklyAssignments = save.weeklyAssignments.map(w => {
     if (w.issuedThrough >= today) return w;
@@ -45,9 +44,9 @@ export function issueWeeklyAssignments(save: SaveData, today: GameDate): SaveDat
     for (const d of dateRange(from, today)) {
       if (weekday(d) !== w.issueDay || !goal || !isAssignmentGoalOn(goal, d)) continue;
       const a = weeklyInstance(w, d, true);
-      if (ids.has(a.id) || open >= R.MAX_OPEN_ASSIGNMENTS) continue;
+      // 未完了の上限では止めない（毎週の課題は数が決まっているので増えすぎない。止めると出し直せなくなる）
+      if (ids.has(a.id)) continue;
       ids.add(a.id);
-      open += 1;
       added.push(a);
     }
     return { ...w, issuedThrough: today };

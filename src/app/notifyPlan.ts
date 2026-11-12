@@ -30,16 +30,27 @@ export interface PlannedNotification {
 export const PLAN_DAYS = 7;
 const MOOD_LABEL = { happy: '元気', neutral: 'ふつう', sad: 'しょんぼり' } as const;
 const MAX_NAMES = 3;
+/** 1つの名前・通知の文の長さの上限（サーバーの上限 400 字より短く） */
+const NAME_MAX = 20;
+export const BODY_MAX = 360;
 
-/** ゲーム日 date の HH:MM（端末の時刻） */
-function timeOn(date: GameDate, hhmm: string): Date {
-  const [y, m, d] = date.split('-').map(Number);
+const clip = (t: string, max: number) => ([...t].length <= max ? t : `${[...t].slice(0, max - 1).join('')}…`);
+
+/**
+ * ゲーム日 date の HH:MM（端末の時刻）。1日の区切り時刻より前の時刻（例：区切り4時で 0:30）は、
+ * そのゲーム日の終わり＝暦の翌日の早朝にする
+ */
+export function timeOn(date: GameDate, hhmm: string, dayStartHour: number): Date {
   const [hh, mm] = hhmm.split(':').map(Number);
+  const cal = hh! < dayStartHour ? addDays(date, 1) : date;
+  const [y, m, d] = cal.split('-').map(Number);
   return new Date(y!, m! - 1, d!, hh!, mm!);
 }
 
-const list = (names: string[]) =>
-  names.length <= MAX_NAMES ? names.join('、') : `${names.slice(0, MAX_NAMES).join('、')} ほか${names.length - MAX_NAMES}件`;
+const list = (names: string[]) => {
+  const shown = names.slice(0, MAX_NAMES).map(n => clip(n, NAME_MAX)).join('、');
+  return names.length <= MAX_NAMES ? shown : `${shown} ほか${names.length - MAX_NAMES}件`;
+};
 
 export function buildNotificationPlan(save: SaveData, today: GameDate, now: Date, s: NotifySettings): PlannedNotification[] {
   const out: PlannedNotification[] = [];
@@ -64,7 +75,7 @@ export function buildNotificationPlan(save: SaveData, today: GameDate, now: Date
       if (s.deadlines && dueToday.length) lines.push(`今日締切：${list(dueToday)}`);
       if (s.deadlines && dueTomorrow.length) lines.push(`明日締切：${list(dueTomorrow)}`);
       if (s.collapse && imminent.length) lines.push(`⚠ 倒壊寸前：${list(imminent)}`);
-      out.push({ at: timeOn(date, s.morning).toISOString(), title: 'ひびつみ：おはようございます', body: lines.join('\n'), tag: `morning-${date}` });
+      out.push({ at: timeOn(date, s.morning, save.dayStartHour).toISOString(), title: 'ひびつみ：おはようございます', body: clip(lines.join('\n'), BODY_MAX), tag: `morning-${date}` });
     }
 
     if (s.evening) {
@@ -76,7 +87,7 @@ export function buildNotificationPlan(save: SaveData, today: GameDate, now: Date
       // 知らせることがない夜は送らない
       if (lines.length) {
         lines.push(moraleText);
-        out.push({ at: timeOn(date, s.evening).toISOString(), title: 'ひびつみ：今日のふり返り', body: lines.join('\n'), tag: `evening-${date}` });
+        out.push({ at: timeOn(date, s.evening, save.dayStartHour).toISOString(), title: 'ひびつみ：今日のふり返り', body: clip(lines.join('\n'), BODY_MAX), tag: `evening-${date}` });
       }
     }
   }

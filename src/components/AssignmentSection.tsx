@@ -155,7 +155,7 @@ function WeeklyList({ save, goal, dispatch, newId }: Omit<Props, 'sim' | 'today'
     <div className="weekly-block">
       <div className="card-head">
         <h3>毎週の課題</h3>
-        {!open && mine.length < MAX_WEEKLY_ASSIGNMENTS && (
+        {!open && save.weeklyAssignments.length < MAX_WEEKLY_ASSIGNMENTS && (
           <button type="button" className="btn small" onClick={() => setOpen(true)}>＋ 登録</button>
         )}
       </div>

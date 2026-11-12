@@ -22,8 +22,12 @@ export const TERRAIN_ORDER: TerrainKind[] = ['road', 'paddy', 'field', 'water', 
 
 /** 田んぼ・畑がこのマス数ごとに、活動した日の税収 +1（置いた翌日から） */
 export const FARM_TILES_PER_TAX = 5;
-/** 記録の上限（置いたり消したりの回数） */
-export const TERRAIN_MAX_LOG = 5000;
+/** 田んぼ・畑による税収の上乗せは1日この枚数まで */
+export const FARM_TAX_MAX = 50;
+/** 置ける記録の上限（置いたり消したりの回数）。これを超えても「消す」はできる */
+export const TERRAIN_MAX_LOG = 20000;
+/** 「消す」も含めた記録の絶対の上限（保存データの検証用） */
+export const TERRAIN_HARD_MAX_LOG = 25000;
 
 export const TERRAIN_COLS = 16;
 /** 置ける行の上限（区画の上限から決まる地図の高さ） */

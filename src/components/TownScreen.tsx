@@ -19,7 +19,7 @@ import { useViewPrefs } from '../app/viewPrefs';
 import { EVENT_EFFECT_DAYS, EVENT_FOR_SEASON, EVENTS, eventActiveOn, SEASON_LABEL, seasonKey, seasonOf, weatherOf, type EventKind } from '../core/seasons';
 import { addDays, diffDays } from '../core/date';
 import { timeOfDay, type Ambience } from '../render/ambience';
-import { currentTerrain, FARM_TILES_PER_TAX, isFarm, TERRAIN, TERRAIN_ORDER, type TerrainKind } from '../core/terrain';
+import { currentTerrain, FARM_TAX_MAX, FARM_TILES_PER_TAX, isFarm, TERRAIN, TERRAIN_ORDER, type TerrainKind } from '../core/terrain';
 import { terrainSprite } from '../render/terrainSprites';
 import { groundTier } from '../render/townLayout';
 
@@ -272,7 +272,7 @@ function PopulationInfo({ sim, farms }: { sim: SimResult; farms: number }) {
         <li>続けたごほうび {p.activity}人（活動した日7日ごとに1人）</li>
         {p.away > 0 && <li>引っ越し中 −{p.away}人（しょんぼりで終わった日に1人出ていき、元気で終わった日に1人戻ります）</li>}
         <li>税収：目標や課題を1つでもやった日に、人口×0.5 コイン</li>
-        <li>田んぼ・畑 {farms}マス：{FARM_TILES_PER_TAX}マスごとに税収 +1（置いた翌日から。今は +{sim.farmTax}）</li>
+        <li>田んぼ・畑 {farms}マス：{FARM_TILES_PER_TAX}マスごとに税収 +1、1日 {FARM_TAX_MAX} まで（置いた翌日から。今は +{sim.farmTax}）</li>
       </ul>
     </details>
   );

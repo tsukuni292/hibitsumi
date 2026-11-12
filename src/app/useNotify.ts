@@ -41,7 +41,13 @@ export function useNotify(save: SaveData | null, today: GameDate): Notify {
   useEffect(() => {
     if (!save || !state.enabled) return;
     const t = setTimeout(() => {
-      syncNotify(stateRef.current, save, today).then(setState).catch(() => undefined);
+      // 送れなかったときは画面に出す（黙って止まらないように）
+      syncNotify(stateRef.current, save, today)
+        .then(next => {
+          setState(next);
+          setError(null);
+        })
+        .catch(e => setError(`通知の予定を送れませんでした：${e instanceof Error ? e.message : String(e)}`));
     }, SYNC_DELAY_MS);
     return () => clearTimeout(t);
   }, [save, today, state.enabled, state.settings]);

@@ -44,3 +44,18 @@ select cron.schedule(
        body := '{"action": "send"}'::jsonb
      ) $$
 );
+
+-- 送信（action: send）を pg_cron からだけ呼べるように、合い言葉を置く（値は DB の中だけで作り、外に出さない）
+alter table hibitsumi.config add column if not exists cron_key text not null default encode(extensions.gen_random_bytes(24), 'hex');
+create index if not exists devices_endpoint_idx on hibitsumi.devices ((subscription->>'endpoint'));
+
+-- 5分ごとの送信に、合い言葉を付ける（実行のたびに表から読む）。同じ名前で登録し直すと置き換わる
+select cron.schedule(
+  'hibitsumi-push-send',
+  '*/5 * * * *',
+  $$ select net.http_post(
+       url := 'https://yhdhmynxjtczhyzhmauq.supabase.co/functions/v1/hibitsumi-push',
+       headers := '{"Content-Type": "application/json"}'::jsonb,
+       body := jsonb_build_object('action', 'send', 'key', (select cron_key from hibitsumi.config where id = 1))
+     ) $$
+);
