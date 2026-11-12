@@ -15,6 +15,8 @@ interface Props {
   zoom: number;
   /** 住民をタップしたとき（住民の番号） */
   onResidentTap?: (index: number) => void;
+  /** 配置を変えるモード：タップした地点（アート座標）と、そこにある動かせる物のキー */
+  onPlaceTap?: (ax: number, ay: number, hitKey: string | null) => void;
 }
 
 const TAP_SLOP = 6; // これ以上動いたらドラッグ扱い（CSS px）
@@ -52,7 +54,7 @@ function residentPos(i: number, t: number, lay: TownLayout): { x: number; y: num
   return { x: Math.round(x), y: lane.y };
 }
 
-export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap }: Props) {
+export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, zoom, onResidentTap, onPlaceTap }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 描画ループから最新の props を読むための参照
@@ -64,6 +66,8 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
   onSelectRef.current = onSelect;
   const onResidentTapRef = useRef(onResidentTap);
   onResidentTapRef.current = onResidentTap;
+  const onPlaceTapRef = useRef(onPlaceTap);
+  onPlaceTapRef.current = onPlaceTap;
   /** 話している住民（吹き出しの印を出す） */
   const talk = useRef<{ index: number; until: number } | null>(null);
 
@@ -231,6 +235,15 @@ export function TownCanvas({ layout, morale, residents, selectedKey, onSelect, z
     const z = effZoom();
     const ax = cam.current.x + (e.clientX - rect.left) / z;
     const ay = cam.current.y + (e.clientY - rect.top) / z;
+
+    // 配置を変えるモードでは、住民は無視して建物・施設・民家だけを見る
+    if (onPlaceTapRef.current) {
+      const hit = [...live.current.layout.items].reverse().find(
+        it => it.place && ax >= it.x && ax < it.x + it.w && ay >= it.y && ay < it.y + it.h,
+      );
+      onPlaceTapRef.current(ax, ay, hit?.key ?? null);
+      return;
+    }
 
     // 住民は建物より手前に描くので先に調べる（後に描いた住民ほど手前）
     if (onResidentTapRef.current) {

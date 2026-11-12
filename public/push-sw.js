@@ -10,8 +10,8 @@ self.addEventListener('push', event => {
     self.registration.showNotification(data.title || 'ひびつみ', {
       body: data.body || '',
       tag: data.tag,
+      // badge は単色の絵が必要（色つきのアイコンだと Android の状態バーで白い四角になる）ので指定しない
       icon: 'icon-192.png',
-      badge: 'icon-192.png',
       data: { url: self.registration.scope },
     }),
   );

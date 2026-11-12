@@ -12,7 +12,7 @@ import { formatShort } from '../app/format';
 import { formatSource, quoteFor } from '../core/quotes';
 import { residentCount, residentLine } from '../render/residents';
 import { spriteSize } from '../render/spriteCache';
-import { HOUSES_BY_STAGE, layoutTown } from '../render/townLayout';
+import { HOUSES_BY_STAGE, layoutTown, placementAt, SPAN, type Placement, type TownLayout } from '../render/townLayout';
 import { SpriteImg } from './SpriteImg';
 import { TownCanvas } from './TownCanvas';
 
@@ -36,6 +36,10 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
   const [shopOpen, setShopOpen] = useState(false);
   // 住民をタップした回数（タップのたびに次の名言）
   const [quoteCount, setQuoteCount] = useState<number | null>(null);
+  // 配置を変えるモードと、動かそうとしている物
+  const [arranging, setArranging] = useState(false);
+  const [mover, setMover] = useState<string | null>(null);
+  const [arrangeMsg, setArrangeMsg] = useState<string | null>(null);
   const zoom = ZOOMS[zoomIdx] ?? 3;
 
   const activeGoals = useMemo(() => save.goals.filter(g => isActive(g, today)), [save.goals, today]);
@@ -55,6 +59,7 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         stage,
         spriteSize,
         facilities.map(f => ({ id: f.id, kind: f.kind })),
+        save.placements,
       ),
     [activeGoals, sim, save, stage, facilities],
   );
@@ -72,13 +77,19 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
           layout={layout}
           morale={sim.morale}
           residents={residentCount(HOUSES_BY_STAGE[stage]) + facilityResidents}
-          selectedKey={selGoal || selFacility ? selected : null}
+          selectedKey={arranging ? mover : selGoal || selFacility ? selected : null}
           onSelect={key => {
             setSelected(key);
             if (key) setShopOpen(false);
           }}
           zoom={zoom}
           onResidentTap={() => setQuoteCount(c => (c === null ? 0 : c + 1))}
+          onPlaceTap={arranging ? (ax, ay, hitKey) => {
+            const r = arrangeTap(layout, mover, ax, ay, hitKey);
+            setArrangeMsg(r.message);
+            setMover(r.mover);
+            if (r.placements) dispatch({ type: 'setPlacements', placements: r.placements });
+          } : undefined}
         />
         <div className="zoom-buttons">
           <button type="button" className="btn icon" aria-label="縮小" disabled={zoomIdx === 0} onClick={() => setZoomIdx(i => Math.max(0, i - 1))}>－</button>
@@ -103,12 +114,35 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <p className="speech">住民「{line}」<span className="hint">　住民をタップすると、名言を教えてくれます。</span></p>
       )}
 
+      {arranging ? (
+        <div className="arrange-bar">
+          <p className="hint">{arrangeMsg ?? '動かしたい物をタップしてから、置きたい場所をタップしてください。ほかの物をタップすると入れ替えます。'}</p>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => {
+                if (window.confirm('動かした位置を全部やめて、自動で並べ直しますか？')) {
+                  dispatch({ type: 'resetPlacements' });
+                  setMover(null);
+                  setArrangeMsg(null);
+                }
+              }}
+            >
+              自動で並べ直す
+            </button>
+            <button type="button" className="btn small primary" onClick={() => { setArranging(false); setMover(null); setArrangeMsg(null); }}>完了</button>
+          </div>
+        </div>
+      ) : (
       <div className="btn-row">
+        <button type="button" className="btn" onClick={() => { setArranging(true); setSelected(null); setShopOpen(false); }}>配置を変える</button>
         <button type="button" className={`btn${shopOpen ? ' primary' : ''}`} onClick={() => { setShopOpen(o => !o); setSelected(null); }}>
           住民のための施設を建てる
         </button>
         {sim.charmState !== 'none' && <span className="hint">お守り：{CHARM_LABEL[sim.charmState]}</span>}
       </div>
+      )}
 
       {shopOpen && <FacilityShop sim={sim} dispatch={dispatch} newId={newId} />}
 
@@ -116,11 +150,44 @@ export function TownScreen({ save, sim, today, stage, dispatch, newId }: Props) 
         <BuildingPanel save={save} sim={sim} today={today} goalId={selGoal.id} dispatch={dispatch} onClose={() => setSelected(null)} />
       )}
       {selFacility && <FacilityPanel facility={selFacility} today={today} onClose={() => setSelected(null)} />}
-      {!selGoal && !selFacility && !shopOpen && (
+      {!selGoal && !selFacility && !shopOpen && !arranging && (
         <p className="hint center">建物をタップすると、くわしい情報と建て替えができます。ドラッグで街を動かせます。</p>
       )}
     </div>
   );
+}
+
+/**
+ * 配置を変えるモードでのタップ。1回目で動かす物を選び、2回目で置き場所を決める。
+ * ほかの物をタップしたら入れ替え、空いた場所なら移動。2つ以上と重なる場所には置かない。
+ * 動かすときは、今の並びを全部覚えておく（自動で並んでいた物が勝手に動かないように）。
+ */
+function arrangeTap(layout: TownLayout, mover: string | null, ax: number, ay: number, hitKey: string | null): {
+  mover: string | null; message: string | null; placements?: Record<string, Placement>;
+} {
+  if (!mover) return hitKey ? { mover: hitKey, message: '置きたい場所をタップしてください（同じ物をもう一度タップでやめる）。' } : { mover: null, message: null };
+  if (hitKey === mover) return { mover: null, message: null };
+  const placeOf = (key: string) => layout.items.find(it => it.key === key)?.place;
+  const from = placeOf(mover);
+  if (!from) return { mover: null, message: null };
+  const snapshot: Record<string, Placement> = {};
+  for (const it of layout.items) if (it.place) snapshot[it.key] = it.place;
+
+  if (hitKey) {
+    const to = placeOf(hitKey);
+    if (!to) return { mover, message: null };
+    return { mover: null, message: '入れ替えました。', placements: { ...snapshot, [mover]: to, [hitKey]: from } };
+  }
+  const to = placementAt(ax, ay, layout.blocks);
+  const blockers = layout.items.filter(
+    it => it.place && it.key !== mover && it.place.block === to.block && it.place.col < to.col + SPAN && to.col < it.place.col + SPAN,
+  );
+  if (blockers.length === 0) return { mover: null, message: '動かしました。', placements: { ...snapshot, [mover]: to } };
+  if (blockers.length === 1) {
+    const other = blockers[0]!;
+    return { mover: null, message: '入れ替えました。', placements: { ...snapshot, [mover]: other.place!, [other.key]: from } };
+  }
+  return { mover, message: 'そこには置けません。空いている場所か、ほかの物の上をタップしてください。' };
 }
 
 function usePanelScroll(dep: unknown) {

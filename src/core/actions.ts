@@ -6,7 +6,7 @@ import { frequencyOn, hasMinimum, isActive, isAssignmentGoalOn, isCheckable, tex
 import * as R from './rules';
 import { checkOn, isFadedNow, isRegisteredBefore, simulate } from './simulate';
 import type {
-  Assignment, BuildingKind, CheckLevel, FacilityKind, Frequency, Goal, GoalText, GoalType, SaveData, Todo, WeeklyAssignment,
+  Assignment, BuildingKind, CheckLevel, FacilityKind, Frequency, Goal, GoalText, GoalType, Placement, SaveData, Todo, WeeklyAssignment,
 } from './types';
 import { issueWeeklyAssignments, lastIssueDate, weeklyInstance } from './weekly';
 
@@ -34,6 +34,10 @@ export type Action =
   | { type: 'addWeeklyAssignment'; id: string; goalId: string; title: string; issueDay: number; dueDay: number }
   /** 毎週の課題をやめる（もう出ている課題はそのまま残す） */
   | { type: 'deleteWeeklyAssignment'; id: string }
+  /** 街の物の位置をまとめて決める（入れ替えのときは2つ一緒に） */
+  | { type: 'setPlacements'; placements: Record<string, Placement> }
+  /** 自由配置をやめて自動で並べ直す */
+  | { type: 'resetPlacements' }
   | { type: 'setDayStartHour'; hour: number }
   | { type: 'markSummarySeen'; upTo: GameDate }
   | { type: 'markBackup' }
@@ -473,6 +477,22 @@ function apply(save: SaveData, action: Action, today: GameDate): ActionResult {
       if (!save.weeklyAssignments.some(w => w.id === action.id)) return fail('毎週の課題が見つかりません');
       return { ok: true, save: { ...save, weeklyAssignments: save.weeklyAssignments.filter(w => w.id !== action.id) } };
     }
+
+    case 'setPlacements': {
+      const entries = Object.entries(action.placements);
+      for (const [key, p] of entries) {
+        if (!/^(goal|fac|house):.+$/.test(key)) return fail('動かせない物です');
+        const ok = Number.isInteger(p.col) && Number.isInteger(p.block) && p.col >= 0 && p.col <= R.PLACE_MAX_COL && p.block >= 0 && p.block < R.PLACE_MAX_BLOCKS;
+        if (!ok) return fail('そこには置けません');
+      }
+      const placements = { ...save.placements };
+      for (const [key, p] of entries) placements[key] = { col: p.col, block: p.block };
+      if (Object.keys(placements).length > R.PLACE_MAX_ITEMS) return fail('動かした物が多すぎます。「自動で並べ直す」を使ってください');
+      return { ok: true, save: { ...save, placements } };
+    }
+
+    case 'resetPlacements':
+      return { ok: true, save: { ...save, placements: {} } };
 
     case 'setDayStartHour': {
       const h = action.hour;

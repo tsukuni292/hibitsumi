@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { isGameDate } from '../core/date';
 import { MINI_KINDS, PART_OPTIONS } from '../core/buildingLook';
-import { BUILDING_NAME_MAX, DIARY_MAX_IDEAL_CHARS } from '../core/rules';
+import { BUILDING_NAME_MAX, DIARY_MAX_IDEAL_CHARS, PLACE_MAX_BLOCKS, PLACE_MAX_COL } from '../core/rules';
 import { SCHEMA_VERSION, type SaveData } from '../core/types';
 
 const gameDate = z.string().refine(isGameDate, { message: '日付の形式が正しくありません' });
@@ -76,6 +76,11 @@ const weeklyAssignment = z.object({
   issuedThrough: gameDate,
 });
 
+const placement = z.object({
+  col: z.number().int().min(0).max(PLACE_MAX_COL),
+  block: z.number().int().min(0).max(PLACE_MAX_BLOCKS - 1),
+});
+
 const facility = z.object({
   id: z.string().min(1),
   kind: z.enum(['bench', 'sakura', 'stall', 'teahouse', 'bathhouse', 'shrine']),
@@ -84,9 +89,9 @@ const facility = z.object({
 
 const unique = <T>(list: T[], key: (t: T) => string) => new Set(list.map(key)).size === list.length;
 
-const saveSchemaV5 = z
+const saveSchemaV6 = z
   .object({
-    schemaVersion: z.literal(5),
+    schemaVersion: z.literal(6),
     startDate: gameDate,
     dayStartHour: z.number().int().min(0).max(6),
     lastSeenDate: gameDate,
@@ -97,6 +102,7 @@ const saveSchemaV5 = z
     assignments: z.array(assignment),
     weeklyAssignments: z.array(weeklyAssignment),
     facilities: z.array(facility),
+    placements: z.record(z.string().regex(/^(goal|fac|house):.+$/), placement),
     restDays: z.array(gameDate),
     upgrades: z.array(z.object({ date: gameDate, goalId: z.string().min(1) })),
     summarySeenDate: gameDate.nullable(),
@@ -110,7 +116,7 @@ const saveSchemaV5 = z
   .refine(s => unique(s.weeklyAssignments, w => w.id), { message: '毎週の課題のIDが重複しています' });
 
 // 型と zod の定義がずれたらコンパイルエラーになるようにする
-export const saveSchema: z.ZodType<SaveData> = saveSchemaV5;
+export const saveSchema: z.ZodType<SaveData> = saveSchemaV6;
 
 /**
  * 移行処理。MIGRATIONS[n] はバージョン n → n+1 の変換。
@@ -134,6 +140,8 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
   3: data => ({ ...data, schemaVersion: 4, weeklyAssignments: [] }),
   // v4 → v5：自分で作る建物（目標に見た目を任意で追加。既存のデータは変えない）
   4: data => ({ ...data, schemaVersion: 5 }),
+  // v5 → v6：自由配置（空＝今までどおり自動で並べる）
+  5: data => ({ ...data, schemaVersion: 6, placements: {} }),
 };
 
 export type ParseResult =

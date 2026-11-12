@@ -1,13 +1,18 @@
 // 街の配置を決める純粋関数（描画とは分離してテストする）
 import { tierForLevel, type Stage, type Tier } from '../core/rules';
 import type { BuildingParts } from '../core/buildingLook';
-import type { BuildingKind, FacilityKind } from '../core/types';
+import type { BuildingKind, FacilityKind, Placement } from '../core/types';
 import { customSpriteName } from './customBuilding';
 
 export const TILE = 16;
 export const COLS = 16;
-const SLOT_X = [1, 4, 7, 10, 13]; // 2マス幅の建物を置く列（間は1マス）
+const SLOT_X = [1, 4, 7, 10, 13]; // 自動で並べるときの列（間は1マス）
 const BLOCK_ROWS = 4; // 建物3マス + 道1マス
+/** 建物の幅（マス）。置ける左端の列は 0〜COLS-2 */
+export const SPAN = 2;
+/** 発展段階ごとの最低限の区画数（区画＝建物の並び1列と、その前の道） */
+export const STAGE_BLOCKS: Record<Stage, number> = { hamlet: 2, village: 3, town: 4, city: 5 };
+export type { Placement } from '../core/types';
 
 const PREFIX: Record<Exclude<BuildingKind, 'custom'>, string> = {
   library: 'lib', bank: 'bank', news: 'news', gym: 'gym', school: 'school', plaza: 'plaza', kura: 'kura',
@@ -40,6 +45,8 @@ export interface PlacedItem {
   goalId?: string;
   facilityId?: string;
   faded?: boolean;
+  /** 動かせる物（建物・施設・民家）の位置 */
+  place?: Placement;
 }
 
 export interface Lane {
@@ -56,6 +63,7 @@ export interface TownLayout {
   tiles: string[][];
   items: PlacedItem[];
   lanes: Lane[];
+  blocks: number;
 }
 
 export const HOUSES_BY_STAGE: Record<Stage, number> = { hamlet: 1, village: 2, town: 3, city: 4 };
@@ -82,15 +90,80 @@ export function facilitySprite(kind: FacilityKind, has: (name: string) => boolea
 
 type Size = (name: string) => { w: number; h: number } | null;
 
-export function layoutTown(goals: LayoutGoal[], stage: Stage, size: Size, facilities: LayoutFacility[] = []): TownLayout {
+/** 区画 b の道の行 */
+export const roadRowOf = (block: number) => 1 + block * BLOCK_ROWS + 3;
+
+/** アート座標の点が、どの区画のどの位置か（建物の中心がそこに来るように左端の列を決める） */
+export function placementAt(ax: number, ay: number, blocks: number): Placement {
+  const col = Math.min(COLS - SPAN, Math.max(0, Math.round(ax / TILE - SPAN / 2)));
+  const block = Math.min(blocks - 1, Math.max(0, Math.floor((ay / TILE - 1) / BLOCK_ROWS)));
+  return { col, block };
+}
+
+export function layoutTown(
+  goals: LayoutGoal[],
+  stage: Stage,
+  size: Size,
+  facilities: LayoutFacility[] = [],
+  placements: Readonly<Record<string, Placement>> = {},
+): TownLayout {
   const has = (n: string) => size(n) !== null;
   const tier = groundTier(stage);
   const houses = HOUSES_BY_STAGE[stage];
-  const slotsNeeded = goals.length + houses + facilities.length;
-  const blocks = Math.max(1, Math.ceil(slotsNeeded / SLOT_X.length));
-  const rows = 1 + blocks * BLOCK_ROWS + 1;
-  const roadRows = Array.from({ length: blocks }, (_, b) => 1 + b * BLOCK_ROWS + 3);
 
+  const entries: Array<{ key: string; sprite: string; extra: Partial<PlacedItem> }> = [
+    ...goals.map(g => ({
+      key: `goal:${g.goalId}`,
+      sprite: buildingSprite(g.kind, g.level, has, g.parts),
+      // がれきは色あせ表示にしない（もう十分さびしいので）
+      extra: { goalId: g.goalId, faded: g.faded && g.level > 0 },
+    })),
+    ...Array.from({ length: houses }, (_, i) => ({ key: `house:${i}`, sprite: `house_${tier}`, extra: {} })),
+    ...facilities.map(f => ({ key: `fac:${f.id}`, sprite: facilitySprite(f.kind, has), extra: { facilityId: f.id } })),
+  ];
+
+  // 区画の数：発展段階の広さ、または全部を自動で並べられる数＋空き1区画の多いほう
+  let blocks = Math.max(STAGE_BLOCKS[stage], Math.ceil(entries.length / SLOT_X.length) + 1);
+  const used: boolean[][] = [];
+  const isFree = (p: Placement) => {
+    if (!Number.isInteger(p.col) || !Number.isInteger(p.block) || p.col < 0 || p.col > COLS - SPAN || p.block < 0 || p.block >= blocks) return false;
+    const row = used[p.block] ?? [];
+    return !row[p.col] && !row[p.col + 1];
+  };
+  const take = (p: Placement) => {
+    const row = (used[p.block] ??= []);
+    row[p.col] = true;
+    row[p.col + 1] = true;
+  };
+
+  // 1. 自分で置いた位置（地図の外・重なりは無視して、あとで自動で置く）
+  const pos = new Map<string, Placement>();
+  for (const e of entries) {
+    const p = placements[e.key];
+    if (p && isFree(p)) {
+      take(p);
+      pos.set(e.key, p);
+    }
+  }
+  // 2. 残りは、いつもの列から順に空いているところへ。なければ区画を足す
+  const findFree = (): Placement => {
+    for (;;) {
+      for (let b = 0; b < blocks; b++) {
+        for (const col of SLOT_X) if (isFree({ col, block: b })) return { col, block: b };
+        for (let col = 0; col <= COLS - SPAN; col++) if (isFree({ col, block: b })) return { col, block: b };
+      }
+      blocks += 1;
+    }
+  };
+  for (const e of entries) {
+    if (pos.has(e.key)) continue;
+    const p = findFree();
+    take(p);
+    pos.set(e.key, p);
+  }
+
+  const rows = 1 + blocks * BLOCK_ROWS + 1;
+  const roadRows = Array.from({ length: blocks }, (_, b) => roadRowOf(b));
   const tiles: string[][] = [];
   for (let y = 0; y < rows; y++) {
     const row: string[] = [];
@@ -108,27 +181,16 @@ export function layoutTown(goals: LayoutGoal[], stage: Stage, size: Size, facili
     items.push({ key, sprite, x, y: bottomPx - s.h, w: s.w, h: s.h, bottom: bottomPx, ...extra });
   };
 
-  const entries: Array<{ key: string; sprite: string; extra: Partial<PlacedItem> }> = [
-    ...goals.map(g => ({
-      key: `goal:${g.goalId}`,
-      sprite: buildingSprite(g.kind, g.level, has, g.parts),
-      // がれきは色あせ表示にしない（もう十分さびしいので）
-      extra: { goalId: g.goalId, faded: g.faded && g.level > 0 },
-    })),
-    ...Array.from({ length: houses }, (_, i) => ({ key: `house:${i}`, sprite: `house_${tier}`, extra: {} })),
-    ...facilities.map(f => ({ key: `fac:${f.id}`, sprite: facilitySprite(f.kind, has), extra: { facilityId: f.id } })),
-  ];
-  entries.forEach((e, i) => {
-    const block = Math.floor(i / SLOT_X.length);
-    const slot = SLOT_X[i % SLOT_X.length]!;
-    const bottom = roadRows[block]! * TILE;
-    place(e.key, e.sprite, slot, bottom, e.extra);
-  });
+  for (const e of entries) {
+    const p = pos.get(e.key)!;
+    place(e.key, e.sprite, p.col, roadRowOf(p.block) * TILE, { ...e.extra, place: p });
+  }
 
-  // 飾り：建物の間（道の上）に木か街灯、上下の余白に木
+  // 飾り：建物のない列に木か街灯、上下の余白に木
   const decoBetween = tier === 'village' ? 'deco_tree' : 'deco_lamp';
   roadRows.forEach((roadRow, b) => {
     for (const x of [0, 3, 6, 9, 12, 15]) {
+      if (used[b]?.[x]) continue;
       const sprite = tier === 'town' && (x === 0 || x === 15) ? 'deco_tree' : decoBetween;
       place(`deco:${b}:${x}`, sprite, x, roadRow * TILE);
     }
@@ -146,6 +208,7 @@ export function layoutTown(goals: LayoutGoal[], stage: Stage, size: Size, facili
     tiles,
     items,
     lanes: roadRows.map(r => ({ y: r * TILE, x0: 0, x1: COLS * TILE })),
+    blocks,
   };
 }
 

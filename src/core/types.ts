@@ -1,7 +1,7 @@
 import type { BuildingLook } from './buildingLook';
 import type { GameDate } from './date';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export type CheckLevel = 'min' | 'ideal';
 
@@ -89,6 +89,12 @@ export interface WeeklyAssignment {
   issuedThrough: GameDate;
 }
 
+/** 街での位置（自由配置）。col は建物の左端の列、block は区画（上から0。区画＝建物の並び1列と、その前の道） */
+export interface Placement {
+  col: number;
+  block: number;
+}
+
 export type FacilityKind = 'bench' | 'sakura' | 'stall' | 'teahouse' | 'bathhouse' | 'shrine';
 
 export interface FacilityPurchase {
@@ -114,6 +120,8 @@ export interface SaveData {
   assignments: Assignment[];
   weeklyAssignments: WeeklyAssignment[];
   facilities: FacilityPurchase[];
+  /** 自分で動かした物の位置。キーは goal:ID・fac:ID・house:番号。ないものは自動で並べる */
+  placements: Record<string, Placement>;
   restDays: GameDate[];
   /** 実行した順に並ぶ */
   upgrades: Upgrade[];

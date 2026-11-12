@@ -105,6 +105,14 @@ export const ASSIGNMENT_MAX_DAYS_AHEAD = 180;
 export const MAX_OPEN_ASSIGNMENTS = 100;
 export const MAX_WEEKLY_ASSIGNMENTS = 20;
 
+// ---- 自由配置 ----
+/** 建物の左端に置ける列の最大（街は16列、建物は2列幅） */
+export const PLACE_MAX_COL = 14;
+/** 置ける区画の上限 */
+export const PLACE_MAX_BLOCKS = 30;
+/** 位置を覚えておく物の数の上限（消した目標・施設の分も残るため余裕をもつ） */
+export const PLACE_MAX_ITEMS = 300;
+
 // ---- 自分で作る建物 ----
 export const BUILDING_NAME_MAX = 10;
 /** しばらく開かなかったとき、毎週の課題はこの日数前の分までさかのぼって出す */

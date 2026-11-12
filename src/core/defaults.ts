@@ -65,6 +65,7 @@ export function createInitialSave(today: GameDate, newId: () => string, dayStart
     todos: [],
     assignments: [],
     weeklyAssignments: [],
+    placements: {},
     facilities: [],
     restDays: [],
     upgrades: [],
