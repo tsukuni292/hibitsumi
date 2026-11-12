@@ -8,6 +8,7 @@ import type { Goal, SaveData } from '../core/types';
 import { ConflictError, exportJson, importJson } from '../storage/db';
 import type { Game } from '../app/useGame';
 import { formatShort } from '../app/format';
+import { APP_VERSION, BUILD_TIME, reinstallLatest } from '../app/update';
 import { GoalForm, type GoalFormValue } from './GoalForm';
 
 interface Props {
@@ -143,6 +144,17 @@ export function SettingsScreen({ game, save, today }: Props) {
         <p className="app-title">ひびつみ</p>
         <p className="hint">日々を積んで、まちを育てる</p>
         <p className="hint">開始日 {save.startDate}　・　データ形式 v{save.schemaVersion}</p>
+        <p className="hint">バージョン {APP_VERSION}（{new Date(BUILD_TIME).toLocaleString('ja-JP')} 公開）</p>
+        <button
+          type="button"
+          className="btn small"
+          onClick={() => {
+            if (window.confirm('この端末に保存してあるアプリ本体を入れ直して、最新版を読み込みます。\n記録は消えません。')) void reinstallLatest();
+          }}
+        >
+          最新版に入れ直す
+        </button>
+        <p className="hint">新しい機能が出てこないときに押してください（記録はそのまま残ります）。</p>
       </div>
     </div>
   );

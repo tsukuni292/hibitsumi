@@ -2,10 +2,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { version } from './package.json';
 
 // GitHub Pages のサブパスでも動くように相対パスで出力する
 export default defineConfig({
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -26,6 +31,12 @@ export default defineConfig({
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+      },
+      workbox: {
+        // 新しい版が届いたらすぐ切り替え、古い版の控えは消す
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
       },
     }),
   ],
